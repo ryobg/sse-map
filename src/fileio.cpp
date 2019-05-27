@@ -160,6 +160,7 @@ load_settings ()
         load_font (json, ssemap.font);
 
         ssemap.map = image_t {};
+        ssemap.map.uv[3] = .711f;
         ssemap.map.file = ssemap_directory + "map.dds";
         if (json.contains ("map"))
         {

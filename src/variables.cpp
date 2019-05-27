@@ -142,12 +142,15 @@ player_location ()
 
 /// It is too easy to crash, of the format is freely adjusted by the user
 
-std::string
-format_player_location (std::string format)
+void
+format_player_location (std::string& out, const char* format, std::array<float, 3> const& pos)
 {
-    auto pos = player_location ();
     if (std::isnan (pos[0]))
-        return "(n/a)";
+    {
+        out = "(n/a)";
+        return;
+    }
+    out = format;
 
     std::array<std::string, 3> sp;
     for (int i = 0; i < 3; ++i)
@@ -156,15 +159,13 @@ format_player_location (std::string format)
         sp[i].resize (std::snprintf (&sp[i][0], sp[i].size (), "%.0f", pos[i]));
     }
 
-    replace_all (format, "%x", sp[0]);
-    replace_all (format, "%y", sp[1]);
-    replace_all (format, "%z", sp[2]);
+    replace_all (out, "%x", sp[0]);
+    replace_all (out, "%y", sp[1]);
+    replace_all (out, "%z", sp[2]);
 
     if (auto name = worldspace_name.obtain ())
-        replace_all (format, "%wn", name);
-    else replace_all (format, "%wn", "");
-
-    return format;
+        replace_all (out, "%wn", name);
+    else replace_all (out, "%wn", "");
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -186,12 +187,15 @@ game_time ()
  * Preparses some stuff before calling back strftime()
  */
 
-std::string
-format_game_time (std::string format)
+void
+format_game_time (std::string& out, const char* format, float source)
 {
-    float source = game_time ();
     if (std::isnan (source))
-        return "(n/a)";
+    {
+        out = "(n/a)";
+        return;
+    }
+    out = format;
 
     // Compute the format input
     float hms = source - int (source);
@@ -215,8 +219,8 @@ format_game_time (std::string format)
     // Replace years
     auto sy = std::to_string (y);
     auto sY = "4E" + sy;
-    replace_all (format, "%y", sy);
-    replace_all (format, "%Y", sY);
+    replace_all (out, "%y", sy);
+    replace_all (out, "%Y", sY);
 
     // Replace months
     static std::array<std::string, 12> longmon = {
@@ -233,11 +237,11 @@ format_game_time (std::string format)
         "Thtithil (Egg)", "Nushmeeko (Lizard)", "Shaja-Nushmeeko (Semi-Humanoid Lizard)",
         "Saxhleel (Argonian)", "Xulomaht (The Deceased)"
     };
-    replace_all (format, "%lm", longmon[mo]);
-    replace_all (format, "%bm", birtmon[mo]);
-    replace_all (format, "%am", argomon[mo]);
-    replace_all (format, "%mo", std::to_string (mo+1));
-    replace_all (format, "%md", std::to_string (md));
+    replace_all (out, "%lm", longmon[mo]);
+    replace_all (out, "%bm", birtmon[mo]);
+    replace_all (out, "%am", argomon[mo]);
+    replace_all (out, "%mo", std::to_string (mo+1));
+    replace_all (out, "%md", std::to_string (md));
 
     // Weekdays
     static std::array<std::string, 7> longwday = {
@@ -246,20 +250,18 @@ format_game_time (std::string format)
     static std::array<std::string, 7> shrtwday = {
         "Sun", "Mor", "Tir", "Mid", "Tur", "Fre", "Lor"
     };
-    replace_all (format, "%sd", shrtwday[wd]);
-    replace_all (format, "%ld", longwday[wd]);
-    replace_all (format, "%wd", std::to_string (wd+1));
+    replace_all (out, "%sd", shrtwday[wd]);
+    replace_all (out, "%ld", longwday[wd]);
+    replace_all (out, "%wd", std::to_string (wd+1));
 
     // Time
-    replace_all (format, "%h", std::to_string (h));
-    replace_all (format, "%m", std::to_string (m));
-    replace_all (format, "%s", std::to_string (s));
+    replace_all (out, "%h", std::to_string (h));
+    replace_all (out, "%m", std::to_string (m));
+    replace_all (out, "%s", std::to_string (s));
 
     // Raw
-    replace_all (format, "%r", std::to_string (source));
-    replace_all (format, "%ri", std::to_string (d));
-
-    return format;
+    replace_all (out, "%r", std::to_string (source));
+    replace_all (out, "%ri", std::to_string (d));
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -268,16 +270,16 @@ bool
 setup_variables ()
 {
     skyrim_base = reinterpret_cast<std::uintptr_t> (::GetModuleHandle (nullptr));
-    if (sseh.find_target)
-    {
-        sseh.find_target ("GameTime", &game_epoch.offsets[0]);
-        sseh.find_target ("GameTime.Offset", &game_epoch.offsets[1]);
-        sseh.find_target ("PlayerCharacter", &player_pos.offsets[0]);
-        sseh.find_target ("PlayerCharacter.Position", &player_pos.offsets[1]);
-        sseh.find_target ("PlayerCharacter.Worldspace", &worldspace_name.offsets[1]);
-        sseh.find_target ("Worldspace.Fullname", &worldspace_name.offsets[2]);
-        worldspace_name.offsets[0] = player_pos.offsets[0];
-    }
+    if (!sseh.find_target)
+        return false;
+
+    sseh.find_target ("GameTime", &game_epoch.offsets[0]);
+    sseh.find_target ("GameTime.Offset", &game_epoch.offsets[1]);
+    sseh.find_target ("PlayerCharacter", &player_pos.offsets[0]);
+    sseh.find_target ("PlayerCharacter.Position", &player_pos.offsets[1]);
+    sseh.find_target ("PlayerCharacter.Worldspace", &worldspace_name.offsets[1]);
+    sseh.find_target ("Worldspace.Fullname", &worldspace_name.offsets[2]);
+    worldspace_name.offsets[0] = player_pos.offsets[0];
     return true;
 }
 

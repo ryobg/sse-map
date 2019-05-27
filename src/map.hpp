@@ -67,8 +67,8 @@ bool setup_variables ();
 float game_time ();
 std::array<float, 3> player_location ();
 
-std::string format_game_time (std::string);
-std::string format_player_location (std::string);
+void format_game_time (std::string&, const char*, float);
+void format_player_location (std::string&, const char*, std::array<float, 3> const&);
 
 //--------------------------------------------------------------------------------------------------
 
@@ -100,6 +100,7 @@ struct ssemap_t
 {
     image_t map;
     font_t font;
+    bool show_settings;
 };
 
 extern ssemap_t ssemap;

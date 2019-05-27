@@ -160,7 +160,6 @@ handle_sseh_message (SKSEMessagingInterface::Message* m)
                 << "). Bailing out." << std::endl;
         return;
     }
-
     sseh = *reinterpret_cast<sseh_api*> (m->data);
 }
 
