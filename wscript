@@ -2,22 +2,22 @@
 # encoding: utf-8
 '''
 @file wscript
-@brief This is the main Waf based build sytem file for SSE-Map
+@brief This is the main Waf based build sytem file for MapTrack
 
-This file is part of Skyrim SE Map mod (aka Map).
+This file is part of Skyrim SE Map Tracker mod (aka MapTrack).
 
-  Map is free software: you can redistribute it and/or modify it
+  MapTrack is free software: you can redistribute it and/or modify it
   under the terms of the GNU Lesser General Public License as published
   by the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Map is distributed in the hope that it will be useful,
+  MapTrack is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
   GNU Lesser General Public License for more details.
 
   You should have received a copy of the GNU Lesser General Public
-  License along with Map. If not, see <http://www.gnu.org/licenses/>.
+  License along with MapTrack. If not, see <http://www.gnu.org/licenses/>.
 
 @endinternal
 
@@ -39,7 +39,7 @@ out = 'out'
 ''' String representing the build directory. Can be an absolute path too. It is important to be 
 able to remove the build directory safely, so it should never be given as . or similar. '''
 
-APPNAME = 'sse-map'
+APPNAME = 'sse-maptrack'
 ''' Used to specify the generated executable names and the generated distribution archive name. '''
 
 VERSION = open ('VERSION', 'r').readline ().strip ().replace (',', '.') 
@@ -66,7 +66,7 @@ def build (bld):
         target   = APPNAME, 
         source   = bld.path.ant_glob (["src/*.cpp", "share/utils/*.cpp"]), 
         includes = ['src', 'share'],
-        cxxflags = ['-DMAP_TIMESTAMP="'+str(_datetime_now())+'"', '-DCIMGUI_NO_EXPORT'])
+        cxxflags = ['-DMAPTRACK_TIMESTAMP="'+str(_datetime_now())+'"', '-DCIMGUI_NO_EXPORT'])
 
 def pack (bld):
     import shutil, subprocess

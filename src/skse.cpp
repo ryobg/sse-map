@@ -73,7 +73,7 @@ open_log ()
         // Before plugins are loaded, SKSE takes care to create the directiories
         logfile_path += "\\My Games\\Skyrim Special Edition\\SKSE\\";
     }
-    logfile_path += "sse-map.log";
+    logfile_path += "sse-maptrack.log";
     logfile.open (logfile_path);
 }
 
@@ -100,7 +100,7 @@ log ()
 //--------------------------------------------------------------------------------------------------
 
 void
-map_version (int* maj, int* min, int* patch, const char** timestamp)
+maptrack_version (int* maj, int* min, int* patch, const char** timestamp)
 {
     constexpr std::array<int, 3> ver = {
 #include "../VERSION"
@@ -108,7 +108,7 @@ map_version (int* maj, int* min, int* patch, const char** timestamp)
     if (maj) *maj = ver[0];
     if (min) *min = ver[1];
     if (patch) *patch = ver[2];
-    if (timestamp) *timestamp = MAP_TIMESTAMP; //"2019-04-15T08:37:11.419416+00:00"
+    if (timestamp) *timestamp = MAPTRACK_TIMESTAMP; //"2019-04-15T08:37:11.419416+00:00"
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -130,7 +130,7 @@ handle_sseimgui_message (SKSEMessagingInterface::Message* m)
     sseimgui.version (nullptr, &maj, nullptr, nullptr);
     if (maj < 1)
     {
-        log () << "SSE-Map needs SSE-ImGui 1.1 or later." << std::endl;
+        log () << "SSE-MapTrack needs SSE-ImGui 1.1 or later." << std::endl;
         return;
     }
 
@@ -140,7 +140,7 @@ handle_sseimgui_message (SKSEMessagingInterface::Message* m)
     extern bool setup ();
     if (!setup ())
     {
-        log () << "Unable to initialize SSE Map" << std::endl;
+        log () << "Unable to initialize SSE-MapTrack" << std::endl;
         return;
     }
 
@@ -185,8 +185,8 @@ extern "C" __declspec(dllexport) bool SSEIMGUI_CCONV
 SKSEPlugin_Query (SKSEInterface const* skse, PluginInfo* info)
 {
     info->infoVersion = PluginInfo::kInfoVersion;
-    info->name = "sse-map";
-    map_version ((int*) &info->version, nullptr, nullptr, nullptr);
+    info->name = "sse-maptrack";
+    maptrack_version ((int*) &info->version, nullptr, nullptr, nullptr);
 
     plugin = skse->GetPluginHandle ();
 
@@ -210,7 +210,7 @@ SKSEPlugin_Load (SKSEInterface const* skse)
 
     int a, m, p;
     const char* b;
-    map_version (&a, &m, &p, &b);
+    maptrack_version (&a, &m, &p, &b);
     log () << "SSE-Map "<< a <<'.'<< m <<'.'<< p <<" ("<< b <<')' << std::endl;
     return true;
 }

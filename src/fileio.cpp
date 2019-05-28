@@ -3,20 +3,20 @@
  * @brief File saving and loading and etc. I/O related operations
  * @internal
  *
- * This file is part of Skyrim SE Map mod (aka Map).
+ * This file is part of Skyrim SE Map Tracker mod (aka MapTrack).
  *
- *   Map is free software: you can redistribute it and/or modify it
+ *   MapTrack is free software: you can redistribute it and/or modify it
  *   under the terms of the GNU Lesser General Public License as published
  *   by the Free Software Foundation, either version 3 of the License, or
  *   (at your option) any later version.
  *
- *   Map is distributed in the hope that it will be useful,
+ *   MapTrack is distributed in the hope that it will be useful,
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  *   GNU Lesser General Public License for more details.
  *
  *   You should have received a copy of the GNU Lesser General Public
- *   License along with Map. If not, see <http://www.gnu.org/licenses/>.
+ *   License along with MapTrack. If not, see <http://www.gnu.org/licenses/>.
  *
  * @endinternal
  *
@@ -25,7 +25,7 @@
  * @details
  */
 
-#include "map.hpp"
+#include "maptrack.hpp"
 #include <gsl/gsl_util>
 #include <fstream>
 
@@ -62,7 +62,7 @@ save_settings ()
 {
     int maj, min, patch;
     const char* timestamp;
-    map_version (&maj, &min, &patch, &timestamp);
+    maptrack_version (&maj, &min, &patch, &timestamp);
 
     try
     {
@@ -74,13 +74,13 @@ save_settings ()
                 { "timestamp", timestamp }
             }},
             { "map",  {
-                { "file", ssemap.map.file.c_str () },
-                { "tint", hex_string (ssemap.map.tint) },
-                { "uv", { ssemap.map.uv[0], ssemap.map.uv[1],
-                          ssemap.map.uv[2], ssemap.map.uv[3] }},
+                { "file", maptrack.map.file.c_str () },
+                { "tint", hex_string (maptrack.map.tint) },
+                { "uv", { maptrack.map.uv[0], maptrack.map.uv[1],
+                          maptrack.map.uv[2], maptrack.map.uv[3] }},
             }}
         };
-        save_font (json, ssemap.font);
+        save_font (json, maptrack.font);
 
         std::ofstream of (settings_location);
         if (!of.is_open ())
@@ -151,26 +151,26 @@ load_settings ()
             fi >> json;
 
         extern const char* font_inconsolata;
-        ssemap.font.name = "default";
-        ssemap.font.scale = 1.f;
-        ssemap.font.size = 18.f;
-        ssemap.font.color = IM_COL32_WHITE;
-        ssemap.font.file = "";
-        ssemap.font.default_data = font_inconsolata;
-        load_font (json, ssemap.font);
+        maptrack.font.name = "default";
+        maptrack.font.scale = 1.f;
+        maptrack.font.size = 18.f;
+        maptrack.font.color = IM_COL32_WHITE;
+        maptrack.font.file = "";
+        maptrack.font.default_data = font_inconsolata;
+        load_font (json, maptrack.font);
 
-        ssemap.map = image_t {};
-        ssemap.map.uv[3] = .711f;
-        ssemap.map.file = ssemap_directory + "map.dds";
+        maptrack.map = image_t {};
+        maptrack.map.uv[3] = .711f;
+        maptrack.map.file = ssemap_directory + "map.dds";
         if (json.contains ("map"))
         {
             auto const& jmap = json["map"];
             auto it = jmap["uv"].begin ();
-            for (float& uv: ssemap.map.uv) uv = *it++;
-            ssemap.map.tint = std::stoull (jmap["tint"].get<std::string> (), nullptr, 0);
-            ssemap.map.file = jmap.value ("file", ssemap_directory + "map.dds");
+            for (float& uv: maptrack.map.uv) uv = *it++;
+            maptrack.map.tint = std::stoull (jmap["tint"].get<std::string> (), nullptr, 0);
+            maptrack.map.file = jmap.value ("file", ssemap_directory + "map.dds");
         }
-        if (!sseimgui.ddsfile_texture (ssemap.map.file.c_str (), nullptr, &ssemap.map.ref))
+        if (!sseimgui.ddsfile_texture (maptrack.map.file.c_str (), nullptr, &maptrack.map.ref))
             throw std::runtime_error ("Bad DDS file.");
     }
     catch (std::exception const& ex)

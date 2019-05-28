@@ -1,22 +1,22 @@
 /**
- * @file map.hpp
- * @brief Shared interface between files in SSE-Map
+ * @file maptrack.hpp
+ * @brief Shared interface between files in SSE-MapTrack
  * @internal
  *
- * This file is part of Skyrim SE Map mod (aka Map).
+ * This file is part of Skyrim SE Map Tracker mod (aka MapTrack).
  *
- *   Map is free software: you can redistribute it and/or modify it
+ *   MapTrack is free software: you can redistribute it and/or modify it
  *   under the terms of the GNU Lesser General Public License as published
  *   by the Free Software Foundation, either version 3 of the License, or
  *   (at your option) any later version.
  *
- *   Map is distributed in the hope that it will be useful,
+ *   MapTrack is distributed in the hope that it will be useful,
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  *   GNU Lesser General Public License for more details.
  *
  *   You should have received a copy of the GNU Lesser General Public
- *   License along with Map. If not, see <http://www.gnu.org/licenses/>.
+ *   License along with MapTrack. If not, see <http://www.gnu.org/licenses/>.
  *
  * @endinternal
  *
@@ -25,8 +25,8 @@
  * @details
  */
 
-#ifndef SSEMAP_HPP
-#define SSEMAP_HPP
+#ifndef MAPTRACK_HPP
+#define MAPTRACK_HPP
 
 #include <sse-imgui/sse-imgui.h>
 #include <utils/winutils.hpp>
@@ -41,7 +41,7 @@
 
 // skse.cpp
 
-void map_version (int* maj, int* min, int* patch, const char** timestamp);
+void maptrack_version (int* maj, int* min, int* patch, const char** timestamp);
 
 extern std::ofstream& log ();
 extern std::string logfile_path;
@@ -96,14 +96,14 @@ struct font_t
 //--------------------------------------------------------------------------------------------------
 
 /// Most important stuff for the current running instance
-struct ssemap_t
+struct maptrack_t
 {
     image_t map;
     font_t font;
     bool show_settings;
 };
 
-extern ssemap_t ssemap;
+extern maptrack_t maptrack;
 
 //--------------------------------------------------------------------------------------------------
 

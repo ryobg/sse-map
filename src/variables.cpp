@@ -3,20 +3,20 @@
  * @brief Methods for obtaining the so called Map Variables
  * @internal
  *
- * This file is part of Skyrim SE Map mod (aka Map).
+ * This file is part of Skyrim SE Map Tracker mod (aka MapTrack).
  *
- *   Map is free software: you can redistribute it and/or modify it
+ *   MapTrack is free software: you can redistribute it and/or modify it
  *   under the terms of the GNU Lesser General Public License as published
  *   by the Free Software Foundation, either version 3 of the License, or
  *   (at your option) any later version.
  *
- *   Map is distributed in the hope that it will be useful,
+ *   MapTrack is distributed in the hope that it will be useful,
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  *   GNU Lesser General Public License for more details.
  *
  *   You should have received a copy of the GNU Lesser General Public
- *   License along with Map. If not, see <http://www.gnu.org/licenses/>.
+ *   License along with MapTrack. If not, see <http://www.gnu.org/licenses/>.
  *
  * @endinternal
  *
@@ -25,7 +25,7 @@
  * @details
  */
 
-#include "map.hpp"
+#include "maptrack.hpp"
 #include <sse-hooks/sse-hooks.h>
 
 #include <array>

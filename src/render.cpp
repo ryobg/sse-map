@@ -3,20 +3,20 @@
  * @brief User interface management
  * @internal
  *
- * This file is part of Skyrim SE Map mod (aka Map).
+ * This file is part of Skyrim SE Map Tracker mod (aka MapTrack).
  *
- *   Map is free software: you can redistribute it and/or modify it
+ *   MapTrack is free software: you can redistribute it and/or modify it
  *   under the terms of the GNU Lesser General Public License as published
  *   by the Free Software Foundation, either version 3 of the License, or
  *   (at your option) any later version.
  *
- *   Map is distributed in the hope that it will be useful,
+ *   MapTrack is distributed in the hope that it will be useful,
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  *   GNU Lesser General Public License for more details.
  *
  *   You should have received a copy of the GNU Lesser General Public
- *   License along with Map. If not, see <http://www.gnu.org/licenses/>.
+ *   License along with MapTrack. If not, see <http://www.gnu.org/licenses/>.
  *
  * @endinternal
  *
@@ -25,13 +25,13 @@
  * @details
  */
 
-#include "map.hpp"
+#include "maptrack.hpp"
 #include <cstring>
 #include <cctype>
 
 //--------------------------------------------------------------------------------------------------
 
-ssemap_t ssemap = {};
+maptrack_t maptrack = {};
 
 //--------------------------------------------------------------------------------------------------
 
@@ -52,9 +52,9 @@ render (int active)
     if (!active)
         return;
 
-    imgui.igPushFont (ssemap.font.imfont);
+    imgui.igPushFont (maptrack.font.imfont);
     imgui.igSetNextWindowSize (ImVec2 { 800, 600 }, ImGuiCond_FirstUseEver);
-    if (imgui.igBegin ("SSE Map", nullptr, 0))
+    if (imgui.igBegin ("SSE MapTrack", nullptr, 0))
     {
         static bool since_day = true;
         static float time_point = 0, today = 10;
@@ -67,9 +67,9 @@ render (int active)
         imgui.igBeginGroup ();
         imgui.igSetNextItemWidth (avail.x * .80f);
         imgui.igSliderFloat ("##Time", &time_point, 0, today, "", 1);
-        imgui.igImage (ssemap.map.ref, ImVec2 { avail.x * .80f, avail.y },
-                *(ImVec2*) &ssemap.map.uv[0], *(ImVec2*) &ssemap.map.uv[2],
-                imgui.igColorConvertU32ToFloat4 (ssemap.map.tint), ImVec4 {0,0,0,0});
+        imgui.igImage (maptrack.map.ref, ImVec2 { avail.x * .80f, avail.y },
+                *(ImVec2*) &maptrack.map.uv[0], *(ImVec2*) &maptrack.map.uv[2],
+                imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
         imgui.igEndGroup ();
         imgui.igSameLine (0, -1);
         imgui.igBeginGroup ();
@@ -102,7 +102,7 @@ render (int active)
     imgui.igEnd ();
 
     extern void draw_settings ();
-    if (ssemap.show_settings)
+    if (maptrack.show_settings)
         draw_settings ();
 
     imgui.igPopFont ();
@@ -113,17 +113,17 @@ render (int active)
 void
 draw_settings ()
 {
-    if (imgui.igBegin ("SSE Map: Settings", &ssemap.show_settings, 0))
+    if (imgui.igBegin ("SSE MapTrack: Settings", &maptrack.show_settings, 0))
     {
         constexpr int cflags = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayHSV
             | ImGuiColorEditFlags_InputRGB | ImGuiColorEditFlags_PickerHueBar
             | ImGuiColorEditFlags_AlphaBar;
 
         imgui.igText ("Default font:");
-        ImVec4 font_c = imgui.igColorConvertU32ToFloat4 (ssemap.font.color);
+        ImVec4 font_c = imgui.igColorConvertU32ToFloat4 (maptrack.font.color);
         if (imgui.igColorEdit4 ("Color##Default", (float*) &font_c, cflags))
-            ssemap.font.color = imgui.igGetColorU32Vec4 (font_c);
-        imgui.igSliderFloat ("Scale##Default", &ssemap.font.imfont->Scale, .5f, 2.f, "%.2f", 1);
+            maptrack.font.color = imgui.igGetColorU32Vec4 (font_c);
+        imgui.igSliderFloat ("Scale##Default", &maptrack.font.imfont->Scale, .5f, 2.f, "%.2f", 1);
 
         if (imgui.igButton ("Save settings", ImVec2 {}))
             save_settings ();
