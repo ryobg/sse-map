@@ -89,6 +89,25 @@ setup ()
 
 //--------------------------------------------------------------------------------------------------
 
+static std::pair<ImVec2, ImVec2>
+handle_map_motion ()
+{
+    static auto pos = *(ImVec2*) &maptrack.map.uv[0];
+    static auto sz = *(ImVec2*) &maptrack.map.uv[2];
+    ImGuiIO* io = imgui.igGetIO ();
+    if (io->MouseWheel)
+    {
+        constexpr float zoom_speed = .01f;
+        pos.x += zoom_speed;
+        pos.y += zoom_speed;
+        sz.x -= zoom_speed*2;
+        sz.y -= zoom_speed*2;
+    }
+    return std::make_pair (pos, sz);
+}
+
+//--------------------------------------------------------------------------------------------------
+
 void SSEIMGUI_CCONV
 render (int active)
 {
@@ -109,12 +128,12 @@ render (int active)
         ImVec2 avail = imgui.igGetContentRegionAvail ();
         avail.x -= dragday_size.x * 12; // ~48 chars based on max text content widgets below
         avail.y -= imgui.igGetCursorPosY ();
+        auto mapuv = handle_map_motion ();
 
         imgui.igBeginGroup ();
         imgui.igSetNextItemWidth (avail.x);
         imgui.igSliderFloat ("##Time", &maptrack.time_point, 0, 1, "", 1);
-        imgui.igImage (maptrack.map.ref, avail,
-                *(ImVec2*) &maptrack.map.uv[0], *(ImVec2*) &maptrack.map.uv[2],
+        imgui.igImage (maptrack.map.ref, avail, mapuv.first, mapuv.second,
                 imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
         imgui.igEndGroup ();
         imgui.igSameLine (0, -1);
