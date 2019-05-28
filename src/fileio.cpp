@@ -40,8 +40,8 @@
 
 //--------------------------------------------------------------------------------------------------
 
-std::string ssemap_directory = "Data\\SKSE\\Plugins\\sse-map\\";
-std::string settings_location = ssemap_directory + "settings.json";
+std::string maptrack_directory = "Data\\SKSE\\Plugins\\sse-maptrack\\";
+std::string settings_location = maptrack_directory + "settings.json";
 
 //--------------------------------------------------------------------------------------------------
 
@@ -80,7 +80,7 @@ save_settings ()
                           maptrack.map.uv[2], maptrack.map.uv[3] }},
             }},
             { "timeline", {
-                { "file", maptrack.enabled },
+                { "enabled", maptrack.enabled },
                 { "since dayx", maptrack.since_dayx },
                 { "last xdays", maptrack.last_xdays },
                 { "time point", maptrack.time_point }
@@ -126,9 +126,9 @@ load_font (nlohmann::json const& json, font_t& font)
         return;
 
     font.size = jf.value ("size", font.size);
-    font.file = jf.value ("file", ssemap_directory + font.name + ".ttf");
+    font.file = jf.value ("file", maptrack_directory + font.name + ".ttf");
     if (font.file.empty ())
-        font.file = ssemap_directory + font.name + ".ttf";
+        font.file = maptrack_directory + font.name + ".ttf";
 
     auto font_atlas = imgui.igGetIO ()->Fonts;
 
@@ -150,7 +150,7 @@ load_settings ()
 {
     try
     {
-        nlohmann::json json;
+        nlohmann::json json = nlohmann::json::object ();
         std::ifstream fi (settings_location);
         if (!fi.is_open ())
             log () << "Unable to open " << settings_location << " for reading." << std::endl;
@@ -172,25 +172,25 @@ load_settings ()
         maptrack.time_point = 1;
         if (json.contains ("timeline"))
         {
-            auto const& jt = json["timeline"];
-            maptrack.enabled = jt["enabled"];
-            maptrack.since_dayx = jt["since dayx"];
-            maptrack.last_xdays = jt["last xdays"];
-            maptrack.time_point = jt["time point"];
+            auto const& jt = json.at ("timeline");
+            maptrack.enabled = jt.at ("enabled");
+            maptrack.since_dayx = jt.at ("since dayx");
+            maptrack.last_xdays = jt.at ("last xdays");
+            maptrack.time_point = jt.at ("time point");
         }
 
         maptrack.update_period = json.value ("update period", 5.f);
 
         maptrack.map = image_t {};
         maptrack.map.uv[3] = .711f;
-        maptrack.map.file = ssemap_directory + "map.dds";
+        maptrack.map.file = maptrack_directory + "map.dds";
         if (json.contains ("map"))
         {
-            auto const& jmap = json["map"];
-            auto it = jmap["uv"].begin ();
+            auto const& jmap = json.at ("map");
+            auto it = jmap.at ("uv").begin ();
             for (float& uv: maptrack.map.uv) uv = *it++;
-            maptrack.map.tint = std::stoull (jmap["tint"].get<std::string> (), nullptr, 0);
-            maptrack.map.file = jmap.value ("file", ssemap_directory + "map.dds");
+            maptrack.map.tint = std::stoull (jmap.at ("tint").get<std::string> (), nullptr, 0);
+            maptrack.map.file = jmap.value ("file", maptrack_directory + "map.dds");
         }
         if (!sseimgui.ddsfile_texture (maptrack.map.file.c_str (), nullptr, &maptrack.map.ref))
             throw std::runtime_error ("Bad DDS file.");

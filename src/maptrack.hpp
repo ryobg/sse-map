@@ -56,8 +56,6 @@ extern sseimgui_api sseimgui;
 bool save_settings ();
 bool load_settings ();
 
-extern std::string ssemap_directory;
-
 //--------------------------------------------------------------------------------------------------
 
 // variables.cpp

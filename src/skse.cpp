@@ -161,6 +161,7 @@ handle_sseh_message (SKSEMessagingInterface::Message* m)
         return;
     }
     sseh = *reinterpret_cast<sseh_api*> (m->data);
+    log () << "Accepted SSEH interface v" << SSEH_API_VERSION << std::endl;
 }
 
 //--------------------------------------------------------------------------------------------------

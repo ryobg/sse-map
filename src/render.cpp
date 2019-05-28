@@ -105,26 +105,27 @@ render (int active)
             current_location_s, since_dayx_s, last_xdays_s;
 
         int current_day = int (current_time);
+        auto dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
         ImVec2 avail = imgui.igGetContentRegionAvail ();
+        avail.x -= dragday_size.x * 12; // ~48 chars based on max text content widgets below
         avail.y -= imgui.igGetCursorPosY ();
 
         imgui.igBeginGroup ();
-        imgui.igSetNextItemWidth (avail.x * .80f);
+        imgui.igSetNextItemWidth (avail.x);
         imgui.igSliderFloat ("##Time", &maptrack.time_point, 0, 1, "", 1);
-        imgui.igImage (maptrack.map.ref, ImVec2 { avail.x * .80f, avail.y },
+        imgui.igImage (maptrack.map.ref, avail,
                 *(ImVec2*) &maptrack.map.uv[0], *(ImVec2*) &maptrack.map.uv[2],
                 imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
         imgui.igEndGroup ();
         imgui.igSameLine (0, -1);
         imgui.igBeginGroup ();
 
-        format_game_time (track_start_s, "%md of %lm", track_start);
-        format_game_time (track_end_s, "%md of %lm", track_end);
-        imgui.igText ("From %s to %s", track_start_s.c_str (), track_end_s.c_str ());
+        format_game_time (track_start_s, "From day %ri, %md of %lm", track_start);
+        format_game_time (track_end_s, "to day %ri, %md of %lm", track_end);
+        imgui.igText (track_start_s.c_str ());
+        imgui.igText (track_end_s.c_str ());
         imgui.igText ("%s %d %d %d", current_world.c_str (),
                 int (current_location[0]), int (current_location[1]), int (current_location[2]));
-
-        auto dragday_size = imgui.igCalcTextSize ("12345", nullptr, false, -1.f);
 
         imgui.igSeparator ();
         imgui.igCheckbox ("Tracking enabled", &maptrack.enabled);
@@ -144,7 +145,7 @@ render (int active)
             since_day = false;
         imgui.igSameLine (0, -1);
         imgui.igSetNextItemWidth (dragday_size.x);
-        if (imgui.igDragInt ("##Last X days", &maptrack.last_xdays, .25f, 1, current_day, "%d"))
+        if (imgui.igDragInt ("##Last X days", &maptrack.last_xdays, .25f, 1, 1+current_day, "%d"))
             maptrack.last_xdays = std::min (std::max (1, maptrack.last_xdays), current_day);
         imgui.igSameLine (0, -1);
         auto track_start2 = std::max (0.f, current_time - maptrack.last_xdays);
@@ -154,7 +155,6 @@ render (int active)
         track_start = since_day ? maptrack.since_dayx : track_start2;
         track_end = maptrack.time_point * (current_time - track_start) + track_start;
 
-        imgui.igSeparator ();
         imgui.igSeparator ();
         if (imgui.igButton ("Settings", ImVec2 {}))
             show_settings = !show_settings;

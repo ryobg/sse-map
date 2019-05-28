@@ -266,8 +266,8 @@ format_game_time (std::string& out, const char* format, float source)
     replace_all (out, "%s", std::to_string (s));
 
     // Raw
-    replace_all (out, "%r", std::to_string (source));
     replace_all (out, "%ri", std::to_string (d));
+    replace_all (out, "%r", std::to_string (source));
 }
 
 //--------------------------------------------------------------------------------------------------
