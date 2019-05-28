@@ -53,11 +53,11 @@ static std::ofstream logfile;
 /// [shared] Local initialization
 sseimgui_api sseimgui = {};
 
-/// [shared] Local initialization
-sseh_api sseh = {};
-
 /// [shared] Table with pointers
 imgui_api imgui = {};
+
+/// [shared] Local initialization
+sseh_api sseh = {};
 
 /// [shared] Reports current log file path (for user friendly messages)
 std::string logfile_path;

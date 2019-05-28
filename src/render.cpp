@@ -29,19 +29,62 @@
 #include <cstring>
 #include <cctype>
 
+#include <windows.h>
+
 //--------------------------------------------------------------------------------------------------
 
 maptrack_t maptrack = {};
+
+static bool show_settings = false;
+
+/// Current HWND, used for timer management
+static HWND top_window = nullptr;
+static std::string current_world;
+static std::array<float, 3> current_location = {0,0,0};
+static float current_time = 0;
+
+//--------------------------------------------------------------------------------------------------
+
+static VOID CALLBACK
+timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
+{
+    if (!maptrack.enabled)
+        return;
+    current_world = current_worldspace ();
+    current_location = player_location ();
+    current_time = game_time ();
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool
+update_timer ()
+{
+    if (!::SetTimer (top_window, (UINT_PTR) timer_callback,
+                UINT (maptrack.update_period * 1000), timer_callback))
+    {
+        maptrack.enabled = false;
+        log () << "Failed to create timer: " << format_utf8message (::GetLastError ()) << std::endl;
+        return false;
+    }
+    return true;
+}
 
 //--------------------------------------------------------------------------------------------------
 
 bool
 setup ()
 {
-    bool ret = true;
-    ret &= load_settings ();
-    ret &= setup_variables ();
-    return ret;
+    if (!load_settings ())
+        return false;
+    if (!setup_variables ())
+        return false;
+    top_window = (HWND) imgui.igGetIO ()->ImeWindowHandle;
+    if (!top_window)
+        return false;
+    if (!update_timer ())
+        return false;
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -57,16 +100,17 @@ render (int active)
     if (imgui.igBegin ("SSE MapTrack", nullptr, 0))
     {
         static bool since_day = true;
-        static float time_point = 0, today = 10;
-        static int last_xdays = 1, total_days = 10, since_dayx = 0;
-        static std::string time_point_s, current_location_s, since_day_s, last_dayxs;
+        static float track_end = 0, track_start = 0;
+        static std::string track_start_s, track_end_s,
+            current_location_s, since_dayx_s, last_xdays_s;
 
+        int current_day = int (current_time);
         ImVec2 avail = imgui.igGetContentRegionAvail ();
         avail.y -= imgui.igGetCursorPosY ();
 
         imgui.igBeginGroup ();
         imgui.igSetNextItemWidth (avail.x * .80f);
-        imgui.igSliderFloat ("##Time", &time_point, 0, today, "", 1);
+        imgui.igSliderFloat ("##Time", &maptrack.time_point, 0, 1, "", 1);
         imgui.igImage (maptrack.map.ref, ImVec2 { avail.x * .80f, avail.y },
                 *(ImVec2*) &maptrack.map.uv[0], *(ImVec2*) &maptrack.map.uv[2],
                 imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
@@ -74,35 +118,53 @@ render (int active)
         imgui.igSameLine (0, -1);
         imgui.igBeginGroup ();
 
-        format_game_time (time_point_s, "Day %md of %lm", time_point);
-        imgui.igText (time_point_s.c_str ());
-        format_player_location (current_location_s, "Location: %x %y %z", { 100, 5000, -100 });
-        imgui.igText (current_location_s.c_str ());
+        format_game_time (track_start_s, "%md of %lm", track_start);
+        format_game_time (track_end_s, "%md of %lm", track_end);
+        imgui.igText ("From %s to %s", track_start_s.c_str (), track_end_s.c_str ());
+        imgui.igText ("%s %d %d %d", current_world.c_str (),
+                int (current_location[0]), int (current_location[1]), int (current_location[2]));
+
+        auto dragday_size = imgui.igCalcTextSize ("12345", nullptr, false, -1.f);
+
+        imgui.igSeparator ();
+        imgui.igCheckbox ("Tracking enabled", &maptrack.enabled);
+        imgui.igSeparator ();
 
         if (imgui.igRadioButtonBool ("Since day", since_day))
             since_day = true;
         imgui.igSameLine (0, -1);
-        imgui.igSetNextItemWidth (imgui.igCalcTextSize ("12345", nullptr, false, -1.f).x);
-        imgui.igDragInt ("##Since day X", &since_dayx, .25f, 0, total_days, "%d");
+        imgui.igSetNextItemWidth (dragday_size.x);
+        if (imgui.igDragInt ("##Since day", &maptrack.since_dayx, .25f, 0, current_day, "%d"))
+            maptrack.since_dayx = std::min (std::max (0, maptrack.since_dayx), current_day);
         imgui.igSameLine (0, -1);
-        format_game_time (since_day_s, "Day %md of %lm", since_dayx);
-        imgui.igText (since_day_s.c_str ());
+        format_game_time (since_dayx_s, "i.e. %md of %lm, %Y", maptrack.since_dayx);
+        imgui.igText (since_dayx_s.c_str ());
 
         if (imgui.igRadioButtonBool ("Last##X days", !since_day))
             since_day = false;
         imgui.igSameLine (0, -1);
-        imgui.igSetNextItemWidth (imgui.igCalcTextSize ("12345", nullptr, false, -1.f).x);
-        imgui.igDragInt ("##Last X days", &last_xdays, .25f, 1, total_days, "%d");
+        imgui.igSetNextItemWidth (dragday_size.x);
+        if (imgui.igDragInt ("##Last X days", &maptrack.last_xdays, .25f, 1, current_day, "%d"))
+            maptrack.last_xdays = std::min (std::max (1, maptrack.last_xdays), current_day);
         imgui.igSameLine (0, -1);
-        format_game_time (last_dayxs, "days (%md of %lm)", std::max (0.f, time_point-last_xdays));
-        imgui.igText (last_dayxs.c_str ());
+        auto track_start2 = std::max (0.f, current_time - maptrack.last_xdays);
+        format_game_time (last_xdays_s, "days i.e. %md of %lm, %Y", track_start2);
+        imgui.igText (last_xdays_s.c_str ());
+
+        track_start = since_day ? maptrack.since_dayx : track_start2;
+        track_end = maptrack.time_point * (current_time - track_start) + track_start;
+
+        imgui.igSeparator ();
+        imgui.igSeparator ();
+        if (imgui.igButton ("Settings", ImVec2 {}))
+            show_settings = !show_settings;
 
         imgui.igEndGroup ();
     }
     imgui.igEnd ();
 
     extern void draw_settings ();
-    if (maptrack.show_settings)
+    if (show_settings)
         draw_settings ();
 
     imgui.igPopFont ();
@@ -113,7 +175,7 @@ render (int active)
 void
 draw_settings ()
 {
-    if (imgui.igBegin ("SSE MapTrack: Settings", &maptrack.show_settings, 0))
+    if (imgui.igBegin ("SSE MapTrack: Settings", &show_settings, 0))
     {
         constexpr int cflags = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayHSV
             | ImGuiColorEditFlags_InputRGB | ImGuiColorEditFlags_PickerHueBar

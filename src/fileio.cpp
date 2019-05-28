@@ -78,7 +78,14 @@ save_settings ()
                 { "tint", hex_string (maptrack.map.tint) },
                 { "uv", { maptrack.map.uv[0], maptrack.map.uv[1],
                           maptrack.map.uv[2], maptrack.map.uv[3] }},
-            }}
+            }},
+            { "timeline", {
+                { "file", maptrack.enabled },
+                { "since dayx", maptrack.since_dayx },
+                { "last xdays", maptrack.last_xdays },
+                { "time point", maptrack.time_point }
+            }},
+            { "update period", maptrack.update_period }
         };
         save_font (json, maptrack.font);
 
@@ -158,6 +165,21 @@ load_settings ()
         maptrack.font.file = "";
         maptrack.font.default_data = font_inconsolata;
         load_font (json, maptrack.font);
+
+        maptrack.enabled = true;
+        maptrack.since_dayx = 0;
+        maptrack.last_xdays = 1;
+        maptrack.time_point = 1;
+        if (json.contains ("timeline"))
+        {
+            auto const& jt = json["timeline"];
+            maptrack.enabled = jt["enabled"];
+            maptrack.since_dayx = jt["since dayx"];
+            maptrack.last_xdays = jt["last xdays"];
+            maptrack.time_point = jt["time point"];
+        }
+
+        maptrack.update_period = json.value ("update period", 5.f);
 
         maptrack.map = image_t {};
         maptrack.map.uv[3] = .711f;

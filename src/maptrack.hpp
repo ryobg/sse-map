@@ -66,6 +66,7 @@ bool setup_variables ();
 
 float game_time ();
 std::array<float, 3> player_location ();
+std::string current_worldspace ();
 
 void format_game_time (std::string&, const char*, float);
 void format_player_location (std::string&, const char*, std::array<float, 3> const&);
@@ -100,7 +101,12 @@ struct maptrack_t
 {
     image_t map;
     font_t font;
-    bool show_settings;
+
+    bool enabled = true;    ///< Is tracking, polling for data is, enabled or not
+    int since_dayx = 0;     ///< Show a map track since day X, can't be less than zero actually.
+    int last_xdays = 1;     ///< Map track for the last X days, also not less than zero
+    float time_point = 1;   ///< Memorize where is the time line slider located
+    float update_period;    ///< In seconds, how frequently to poll for data
 };
 
 extern maptrack_t maptrack;

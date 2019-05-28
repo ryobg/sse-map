@@ -162,10 +162,16 @@ format_player_location (std::string& out, const char* format, std::array<float, 
     replace_all (out, "%x", sp[0]);
     replace_all (out, "%y", sp[1]);
     replace_all (out, "%z", sp[2]);
+}
 
+//--------------------------------------------------------------------------------------------------
+
+std::string
+current_worldspace ()
+{
     if (auto name = worldspace_name.obtain ())
-        replace_all (out, "%wn", name);
-    else replace_all (out, "%wn", "");
+        return name;
+    return "";
 }
 
 //--------------------------------------------------------------------------------------------------
