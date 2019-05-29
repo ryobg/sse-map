@@ -166,5 +166,34 @@ bool file_exists (T const& name) //allow const char*
 
 //--------------------------------------------------------------------------------------------------
 
+template<class Container>
+bool
+enumerate_files (std::string const& wildcard, Container& out)
+{
+    std::wstring w;
+    if (!utf8_to_utf16 (wildcard.c_str (), w))
+        return false;
+    out.clear ();
+    WIN32_FIND_DATA fd;
+    auto h = ::FindFirstFile (w.c_str (), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+    do
+    {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            continue;
+        std::string s;
+        if (!utf16_to_utf8 (fd.cFileName, s))
+            break;
+        out.emplace_back (std::move (s));
+    }
+    while (::FindNextFile (h, &fd));
+    auto e = ::GetLastError ();
+    ::FindClose (h);
+    return e == ERROR_NO_MORE_FILES;
+}
+
+//--------------------------------------------------------------------------------------------------
+
 #endif
 

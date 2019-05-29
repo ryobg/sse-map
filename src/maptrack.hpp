@@ -34,6 +34,7 @@
 #include <d3d11.h>
 
 #include <array>
+#include <vector>
 #include <fstream>
 #include <string>
 
@@ -55,6 +56,11 @@ extern sseimgui_api sseimgui;
 
 bool save_settings ();
 bool load_settings ();
+bool save_track (std::string const& file); ///< Modifies maptrack.track
+bool load_track (std::string const& file); ///< Modifies maptrack.track
+
+extern std::string tracks_directory;
+extern std::string default_track_file;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -94,6 +100,9 @@ struct font_t
 
 //--------------------------------------------------------------------------------------------------
 
+/// As reported by player position (xyz) and current game time (t)
+typedef std::array<float, 4> trackpoint_t;
+
 /// Most important stuff for the current running instance
 struct maptrack_t
 {
@@ -105,6 +114,9 @@ struct maptrack_t
     int last_xdays = 1;     ///< Map track for the last X days, also not less than zero
     float time_point = 1;   ///< Memorize where is the time line slider located
     float update_period;    ///< In seconds, how frequently to poll for data
+
+    /// Heavy scenario: 60 seconds by 60 minutes by 150 game hours = 540k elements
+    std::vector<trackpoint_t> track;
 };
 
 extern maptrack_t maptrack;

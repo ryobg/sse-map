@@ -42,6 +42,8 @@
 
 std::string maptrack_directory = "Data\\SKSE\\Plugins\\sse-maptrack\\";
 std::string settings_location = maptrack_directory + "settings.json";
+std::string tracks_directory = maptrack_directory + "tracks\\";
+std::string default_track_file = tracks_directory + "default_track.bin";
 
 //--------------------------------------------------------------------------------------------------
 
@@ -198,6 +200,96 @@ load_settings ()
     catch (std::exception const& ex)
     {
         log () << "Unable to load settings file: " << ex.what () << std::endl;
+        return false;
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+template<class T, class Stream>
+inline void
+write_binary (Stream& os, T const& value)
+{
+    os.write (reinterpret_cast<const char*> (&value), sizeof (T));
+}
+
+template<class T, class Stream>
+inline void
+write_binary (Stream& os, T const* value, std::size_t size)
+{
+    os.write (reinterpret_cast<const char*> (value), size);
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool
+save_track (std::string const& file)
+{
+    std::int32_t maj, min, patch;
+    maptrack_version (&maj, &min, &patch, nullptr);
+    try
+    {
+        std::ofstream f (file, std::ios::binary | std::ios::out);
+        if (!f.is_open ())
+        {
+            log () << "Unable to open " << file << " for writting." << std::endl;
+            return false;
+        }
+        write_binary (f, maj);
+        write_binary (f, min);
+        write_binary (f, patch);
+        write_binary (f, std::uint32_t (maptrack.track.size ()));
+        write_binary (f, maptrack.track.data (), maptrack.track.size () * sizeof (trackpoint_t));
+    }
+    catch (std::exception const& ex)
+    {
+        log () << "Unable to save track file: " << ex.what () << std::endl;
+        return false;
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+template<class T, class Stream>
+inline T
+read_binary (Stream& is)
+{
+    T value;
+    is.read (reinterpret_cast<char*> (&value), sizeof (T));
+    return value;
+}
+
+template<class T, class Stream>
+inline void
+read_binary (Stream& is, T* value, std::size_t size)
+{
+    is.read (reinterpret_cast<char*> (value), size);
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool
+load_track (std::string const& file)
+{
+    try
+    {
+        std::ifstream f (file, std::ios::binary | std::ios::in);
+        if (!f.is_open ())
+        {
+            log () << "Unable to open " << file << " for reading." << std::endl;
+            return false;
+        }
+        read_binary<std::int32_t> (f);
+        read_binary<std::int32_t> (f);
+        read_binary<std::int32_t> (f);
+        maptrack.track.resize (read_binary<std::uint32_t> (f));
+        read_binary (f, maptrack.track.data (), maptrack.track.size () * sizeof (trackpoint_t));
+    }
+    catch (std::exception const& ex)
+    {
+        log () << "Unable to load track file: " << ex.what () << std::endl;
         return false;
     }
     return true;
