@@ -56,6 +56,7 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
     auto curr_world = current_worldspace ();
     auto curr_loc = player_location ();
     auto curr_time = game_time ();
+    log () << curr_time << std::endl;
 
     trackpoint_t newp { curr_loc[0], curr_loc[1], curr_loc[2], curr_time };
     if (last_time > curr_time) // Override history
@@ -121,14 +122,16 @@ static void
 draw_map (ImVec2 const& map_pos, ImVec2 const& map_size)
 {
     auto const& oruv = maptrack.map.uv;
-    static auto uvpos = *(ImVec2*) &oruv[0];
-    static auto uvsz = *(ImVec2*) &oruv[2];
+    static auto uvtl = *(ImVec2*) &oruv[0];
+    static auto uvbr = *(ImVec2*) &oruv[2];
+    static const ImVec2 max_zoom { oruv[2]*.2f, oruv[3]*.2f };
     static bool hovered = false;
     static float mouse_wheel = 0;
     static ImVec2 mouse_drag = {-1,-1};
     constexpr float zoom_factor = .01f;
     ImGuiIO* io = imgui.igGetIO ();
 
+    ImVec2 backup_uvtl = uvtl, backup_uvbr = uvbr;
     if (hovered)
     {
         if (mouse_wheel)
@@ -137,33 +140,54 @@ draw_map (ImVec2 const& map_pos, ImVec2 const& map_size)
             ImVec2 zpos {
                 (io->MousePos.x - map_pos.x - wpos.x) / map_size.x,
                 (io->MousePos.y - map_pos.y - wpos.y) / map_size.y };
-            auto dx = uvsz.x * mouse_wheel * zoom_factor;
-            auto dy = uvsz.y * mouse_wheel * zoom_factor;
-            uvpos.x += dx * zpos.x;
-            uvpos.y += dy * zpos.y;
-            uvsz.x -= dx;
-            uvsz.y -= dy;
+            auto dx = (uvbr.x - uvtl.x) * mouse_wheel * zoom_factor;
+            auto dy = (uvbr.y - uvtl.y) * mouse_wheel * zoom_factor;
+            uvtl.x += dx;// * zpos.x;
+            uvtl.y += dy;// * zpos.y;
+            uvbr.x -= dx;// * (1 - zpos.x);
+            uvbr.y -= dy;// * (1 - zpos.y);
         }
         if (io->MouseDown[0])
         {
             if (mouse_drag.x == -1)
                 mouse_drag = io->MousePos;
-            float dx = (io->MousePos.x - mouse_drag.x) / map_size.x;
-            float dy = (io->MousePos.y - mouse_drag.y) / map_size.y;
-            uvsz.x -= dx * (uvsz.x / oruv[2]);
-            uvsz.y -= dy * (uvsz.y / oruv[3]);
+            float dx = (uvbr.x - uvtl.x) * (io->MousePos.x - mouse_drag.x) / map_size.x;
+            float dy = (uvbr.y - uvtl.y) * (io->MousePos.y - mouse_drag.y) / map_size.y;
+            uvtl.x -= dx;
+            uvtl.y -= dy;
+            uvbr.x -= dx;
+            uvbr.y -= dy;
             mouse_drag = io->MousePos;
         }
         else mouse_drag.x = -1;
     }
     else mouse_drag.x = -1;
 
-    uvpos.x = std::max (oruv[0], std::min (uvpos.x, oruv[2]));
-    uvpos.y = std::max (oruv[1], std::min (uvpos.y, oruv[3]));
-    uvsz.x  = std::max (.2f*oruv[2], std::min (uvsz.x, oruv[2]));
-    uvsz.y  = std::max (.2f*oruv[3], std::min (uvsz.y, oruv[3]));
+    // Fixup various deformation (that whole algo is pita)
+    if (uvbr.x - uvtl.x > oruv[2]) // Assume map width is always greater than its height
+        uvtl = backup_uvtl, uvbr = backup_uvbr;
 
-    imgui.igImage (maptrack.map.ref, map_size, uvpos, uvsz,
+    if (hovered && (mouse_wheel || io->MouseDown[0]))
+    {
+        if (mouse_wheel)
+        {
+            if (std::abs (uvbr.x - uvtl.x) < max_zoom.x || std::abs (uvbr.y - uvtl.y) < max_zoom.y)
+                uvtl = backup_uvtl, uvbr = backup_uvbr;
+        }
+        if (io->MouseDown[0])
+        {
+            uvtl.x = std::max (0.f, std::min (uvtl.x, oruv[2]-max_zoom.x));
+            uvtl.y = std::max (0.f, std::min (uvtl.y, oruv[3]-max_zoom.y));
+            //uvbr.x = std::max (max_zoom.x, std::min (uvbr.x, oruv[2]));
+            //uvbr.y = std::max (max_zoom.y, std::min (uvbr.y, oruv[3]));
+            if (uvbr.x - uvtl.x != backup_uvbr.x - backup_uvtl.x)
+                uvbr.x = backup_uvbr.x, uvtl.x = backup_uvtl.x;
+            if (uvbr.y - uvtl.y != backup_uvbr.y - backup_uvtl.y)
+                uvbr.y = backup_uvbr.y, uvtl.y = backup_uvtl.y;
+        }
+    }
+
+    imgui.igImage (maptrack.map.ref, map_size, uvtl, uvbr,
             imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
 
     // One frame later we handle the input, so to allow the ImGui hover test. Otherwise, if
@@ -173,6 +197,10 @@ draw_map (ImVec2 const& map_pos, ImVec2 const& map_size)
     {
         mouse_wheel = io->MouseWheel ? (io->MouseWheel > 0 ? +1 : -1) : 0;
     }
+
+    // Not very wise, but ImGui makes it hard to disable window drag per widget. Other option
+    // probably would be to use InvisibleButton or ImageButton, but they had their own troubles.
+    io->ConfigWindowsMoveFromTitleBarOnly = hovered;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -197,11 +225,13 @@ render (int active)
         auto dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
         ImVec2 mapsz = imgui.igGetContentRegionAvail ();
         mapsz.x -= dragday_size.x * 12; // ~48 chars based on max text content widgets below
+        auto mappos = imgui.igGetCursorPos ();
+        mapsz.y -= mappos.y;
 
         imgui.igBeginGroup ();
         imgui.igSetNextItemWidth (mapsz.x);
         imgui.igSliderFloat ("##Time", &maptrack.time_point, 0, 1, "", 1);
-        draw_map (imgui.igGetCursorPos (), mapsz);
+        draw_map (mappos, mapsz);
         imgui.igEndGroup ();
         imgui.igSameLine (0, -1);
         imgui.igBeginGroup ();
@@ -258,7 +288,7 @@ render (int active)
             imgui.igOpenPopup ("Clear track?");
         if (imgui.igBeginPopup ("Clear track?", 0))
         {
-            if (imgui.igButton ("Are you sure?##Clear", ImVec2 {-1,0}))
+            if (imgui.igButton ("Are you sure?##Clear", ImVec2 {}))
                 maptrack.track.clear ();
             imgui.igEndPopup ();
         }
@@ -365,7 +395,7 @@ draw_saveas ()
         }
         if (imgui.igBeginPopup ("Overwrite track?", 0))
         {
-            if (imgui.igButton ("Overwrite track?##file", ImVec2 {-1,0}))
+            if (imgui.igButton ("Overwrite track?##file", ImVec2 {}))
                 if (save_track (tracks_directory + name + ".bin"))
                     show_saveas = false;
             imgui.igEndPopup ();
