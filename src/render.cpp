@@ -89,21 +89,63 @@ setup ()
 
 //--------------------------------------------------------------------------------------------------
 
-static std::pair<ImVec2, ImVec2>
-handle_map_motion ()
+static void
+draw_map (ImVec2 const& map_pos, ImVec2 const& map_size)
 {
-    static auto pos = *(ImVec2*) &maptrack.map.uv[0];
-    static auto sz = *(ImVec2*) &maptrack.map.uv[2];
+    auto const& oruv = maptrack.map.uv;
+    static auto uvpos = *(ImVec2*) &oruv[0];
+    static auto uvsz = *(ImVec2*) &oruv[2];
+    static bool hovered = false;
+    static float mouse_wheel = 0;
+    static ImVec2 mouse_drag = {-1,-1};
+    constexpr float zoom_factor = .01f;
+    constexpr float move_factor = .01f;
     ImGuiIO* io = imgui.igGetIO ();
-    if (io->MouseWheel)
+
+    if (hovered)
     {
-        constexpr float zoom_speed = .01f;
-        pos.x += zoom_speed;
-        pos.y += zoom_speed;
-        sz.x -= zoom_speed*2;
-        sz.y -= zoom_speed*2;
+        if (mouse_wheel)
+        {
+            auto wpos = imgui.igGetWindowPos ();
+            ImVec2 zpos {
+                (io->MousePos.x - map_pos.x - wpos.x) / map_size.x,
+                (io->MousePos.y - map_pos.y - wpos.y) / map_size.y };
+            auto dx = uvsz.x * mouse_wheel * zoom_factor;
+            auto dy = uvsz.y * mouse_wheel * zoom_factor;
+            uvpos.x += dx * zpos.x;
+            uvpos.y += dy * zpos.y;
+            uvsz.x -= dx;
+            uvsz.y -= dy;
+        }
+        if (io->MouseDown[0])
+        {
+            if (mouse_drag.x == -1)
+                mouse_drag = io->MousePos;
+            float dx = (io->MousePos.x - mouse_drag.x) / map_size.x;
+            float dy = (io->MousePos.y - mouse_drag.y) / map_size.y;
+            uvsz.x -= dx * (uvsz.x / oruv[2]);
+            uvsz.y -= dy * (uvsz.y / oruv[3]);
+            mouse_drag = io->MousePos;
+        }
+        else mouse_drag.x = -1;
     }
-    return std::make_pair (pos, sz);
+    else mouse_drag.x = -1;
+
+    uvpos.x = std::max (oruv[0], std::min (uvpos.x, oruv[2]));
+    uvpos.y = std::max (oruv[1], std::min (uvpos.y, oruv[3]));
+    uvsz.x  = std::max (.2f*oruv[2], std::min (uvsz.x, oruv[2]));
+    uvsz.y  = std::max (.2f*oruv[3], std::min (uvsz.y, oruv[3]));
+
+    imgui.igImage (maptrack.map.ref, map_size, uvpos, uvsz,
+            imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
+
+    // One frame later we handle the input, so to allow the ImGui hover test. Otherwise, if
+    // scrolling on other window which happens to be in front of the map, it will zoom in/out,
+    // making awkward behaviour.
+    if (hovered = imgui.igIsItemHovered (0))
+    {
+        mouse_wheel = io->MouseWheel ? (io->MouseWheel > 0 ? +1 : -1) : 0;
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -125,16 +167,13 @@ render (int active)
 
         int current_day = int (current_time);
         auto dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
-        ImVec2 avail = imgui.igGetContentRegionAvail ();
-        avail.x -= dragday_size.x * 12; // ~48 chars based on max text content widgets below
-        avail.y -= imgui.igGetCursorPosY ();
-        auto mapuv = handle_map_motion ();
+        ImVec2 mapsz = imgui.igGetContentRegionAvail ();
+        mapsz.x -= dragday_size.x * 12; // ~48 chars based on max text content widgets below
 
         imgui.igBeginGroup ();
-        imgui.igSetNextItemWidth (avail.x);
+        imgui.igSetNextItemWidth (mapsz.x);
         imgui.igSliderFloat ("##Time", &maptrack.time_point, 0, 1, "", 1);
-        imgui.igImage (maptrack.map.ref, avail, mapuv.first, mapuv.second,
-                imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
+        draw_map (imgui.igGetCursorPos (), mapsz);
         imgui.igEndGroup ();
         imgui.igSameLine (0, -1);
         imgui.igBeginGroup ();
