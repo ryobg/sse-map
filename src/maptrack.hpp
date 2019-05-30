@@ -33,10 +33,22 @@
 
 #include <d3d11.h>
 
+#define GLM_FORCE_CXX14
+#define GLM_FORCE_SWIZZLE
+#include <glm/glm.hpp>
+#include <glm/gtx/range.hpp>
+
 #include <array>
 #include <vector>
 #include <fstream>
 #include <string>
+
+//--------------------------------------------------------------------------------------------------
+
+template<class T> static inline glm::vec2
+to_vec2 (T const& v) { return glm::vec2 {v.x, v.y}; }
+template<class T> static inline ImVec2
+to_ImVec2 (T const& v) { return ImVec2 {v.x, v.y}; }
 
 //--------------------------------------------------------------------------------------------------
 
@@ -95,7 +107,7 @@ struct image_t
 {
     std::string file;
     std::uint32_t tint = IM_COL32_WHITE;
-    std::array<float, 4> uv = {{ 0, 0, 1, 1 }};
+    glm::vec4 uv = { 0, 0, 1, 1 };
     ID3D11ShaderResourceView* ref;
 };
 
@@ -113,14 +125,14 @@ struct font_t
 //--------------------------------------------------------------------------------------------------
 
 /// As reported by player position (xyz) and current game time (t)
-typedef std::array<float, 4> trackpoint_t;
+typedef glm::vec4 trackpoint_t;
 
 /// Most important stuff for the current running instance
 struct maptrack_t
 {
     image_t map;
     font_t font;
-    std::array<float, 2> scale, offset; ///< For conversion between texture map and world coords
+    glm::vec2 scale, offset; ///< For conversion between texture map and world coords
 
     bool enabled = true;    ///< Is tracking, polling for data is, enabled or not
     int since_dayx = 0;     ///< Show a map track since day X, can't be less than zero actually.

@@ -45,15 +45,14 @@ static HWND top_window = nullptr;
 static std::string current_location, current_time;
 
 /// The current track as pairs of X/Y coordinates upon the texture map
-static std::vector<std::array<float, 2>> uvtrack;
+static std::vector<glm::vec2> uvtrack;
 
 //--------------------------------------------------------------------------------------------------
 
 static inline decltype (uvtrack)::value_type
 uvtrack_point (trackpoint_t const& t)
 {
-    return {{ t[0] * maptrack.scale[0] + maptrack.offset[0],
-             -t[1] * maptrack.scale[1] + maptrack.offset[1] }};
+    return maptrack.offset + glm::vec2 { t.x * maptrack.scale.x, -t.y * maptrack.scale.y };
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -142,57 +141,49 @@ setup ()
 //--------------------------------------------------------------------------------------------------
 
 static void
-draw_map (ImVec2 const& map_pos, ImVec2 const& map_size)
+draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
 {
     auto const& oruv = maptrack.map.uv;
-    static auto uvtl = *(ImVec2*) &oruv[0];
-    static auto uvbr = *(ImVec2*) &oruv[2];
-    static const ImVec2 max_zoom { oruv[2]*.2f, oruv[3]*.2f };
+    static glm::vec2 uvtl = oruv.xy ();
+    static glm::vec2 uvbr = oruv.zw ();
+    static const glm::vec2 max_zoom = oruv.zw () * .2f;
     static bool hovered = false;
     static float mouse_wheel = 0;
-    static ImVec2 mouse_drag = {-1,-1};
+    static glm::vec2 last_mouse_pos = {-1,-1};
     constexpr float zoom_factor = .01f;
     ImGuiIO* io = imgui.igGetIO ();
-    auto wpos = imgui.igGetWindowPos ();
+    auto wpos = to_vec2 (imgui.igGetWindowPos ());
 
-    ImVec2 backup_uvtl = uvtl, backup_uvbr = uvbr;
+    glm::vec2 backup_uvtl = uvtl, backup_uvbr = uvbr;
     if (hovered)
     {
         if (mouse_wheel)
         {
-            ImVec2 zpos {
-                (io->MousePos.x - map_pos.x - wpos.x) / map_size.x,
-                (io->MousePos.y - map_pos.y - wpos.y) / map_size.y };
-            auto dx = (uvbr.x - uvtl.x) * mouse_wheel * zoom_factor;
-            auto dy = (uvbr.y - uvtl.y) * mouse_wheel * zoom_factor;
-            uvtl.x += dx;// * zpos.x;
-            uvtl.y += dy;// * zpos.y;
-            uvbr.x -= dx;// * (1 - zpos.x);
-            uvbr.y -= dy;// * (1 - zpos.y);
+            auto mouse_pos = to_vec2 (io->MousePos);
+            auto z = (mouse_pos - map_pos - wpos) / map_size;
+            auto d = (uvbr - uvtl) * mouse_wheel * zoom_factor;
+            uvtl += d * z;
+            uvbr -= d * (1.f - z);
         }
         if (io->MouseDown[0])
         {
-            if (mouse_drag.x == -1)
-                mouse_drag = io->MousePos;
-            float dx = (uvbr.x - uvtl.x) * (io->MousePos.x - mouse_drag.x) / map_size.x;
-            float dy = (uvbr.y - uvtl.y) * (io->MousePos.y - mouse_drag.y) / map_size.y;
-            uvtl.x -= dx;
-            uvtl.y -= dy;
-            uvbr.x -= dx;
-            uvbr.y -= dy;
-            mouse_drag = io->MousePos;
+            auto mouse_pos = to_vec2 (io->MousePos);
+            if (last_mouse_pos.x == -1)
+                last_mouse_pos = mouse_pos;
+            auto d = (uvbr - uvtl) * (mouse_pos - last_mouse_pos) / map_size;
+            uvtl -= d;
+            uvbr -= d;
+            last_mouse_pos = mouse_pos;
         }
-        else mouse_drag.x = -1;
+        else last_mouse_pos.x = -1;
     }
-    else mouse_drag.x = -1;
+    else last_mouse_pos.x = -1;
 
     // Fixup various deformation (that whole function is mess)
     if (hovered && (mouse_wheel || io->MouseDown[0]))
     {
-        uvtl.x = std::max (0.f, std::min (uvtl.x, oruv[2]-max_zoom.x));
-        uvtl.y = std::max (0.f, std::min (uvtl.y, oruv[3]-max_zoom.y));
-        uvbr.x = std::max (max_zoom.x, std::min (uvbr.x, oruv[2]));
-        uvbr.y = std::max (max_zoom.y, std::min (uvbr.y, oruv[3]));
+        uvtl = glm::clamp (glm::vec2 (0), uvtl, oruv.zw () - max_zoom);
+        uvbr = glm::clamp (max_zoom, uvbr, oruv.zw ());
         if (mouse_wheel)
         {
             if (std::abs (uvbr.x - uvtl.x) < max_zoom.x
@@ -208,17 +199,16 @@ draw_map (ImVec2 const& map_pos, ImVec2 const& map_size)
         }
     }
 
-    imgui.igImage (maptrack.map.ref, map_size, uvtl, uvbr,
+    imgui.igImage (maptrack.map.ref, to_ImVec2 (map_size), to_ImVec2 (uvtl), to_ImVec2 (uvbr),
             imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
 
     if (!uvtrack.empty ())
     {
-        auto lpp = *(ImVec2*) &uvtrack.back (); // last player position
+        auto lpp = uvtrack.back (); // last player position
         if (lpp.x > uvtl.x && lpp.x < uvbr.x && lpp.y > uvtl.y && lpp.y < uvbr.y)
         {
             imgui.ImDrawList_AddCircleFilled (imgui.igGetWindowDrawList (),
-                ImVec2 { wpos.x + map_pos.x + map_size.x * (lpp.x - uvtl.x) / (uvbr.x - uvtl.x),
-                         wpos.y + map_pos.y + map_size.y * (lpp.y - uvtl.y) / (uvbr.y - uvtl.y)},
+                to_ImVec2 (wpos + map_pos + map_size * (lpp - uvtl) / (uvbr - uvtl)),
                 8, IM_COL32 (0,0,255,255), 12);
         }
     }
@@ -256,13 +246,13 @@ render (int active)
         float last_recorded_time = maptrack.track.empty () ? 0.f : maptrack.track.back ()[3];
         int last_recorded_day = int (last_recorded_time);
         auto dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
-        ImVec2 mapsz = imgui.igGetContentRegionAvail ();
+        auto mapsz = to_vec2 (imgui.igGetContentRegionAvail ());
         mapsz.x -= dragday_size.x * 12; // ~48 chars based on max text content widgets below
 
         imgui.igBeginGroup ();
         imgui.igSetNextItemWidth (mapsz.x);
         imgui.igSliderFloat ("##Time", &maptrack.time_point, 0, 1, "", 1);
-        auto mappos = imgui.igGetCursorPos ();
+        auto mappos = to_vec2 (imgui.igGetCursorPos ());
         mapsz.y -= mappos.y;
         draw_map (mappos, mapsz);
         imgui.igEndGroup ();
@@ -329,6 +319,7 @@ render (int active)
             {
                 maptrack.track.clear ();
                 uvtrack.clear ();
+                imgui.igCloseCurrentPopup ();
             }
             imgui.igEndPopup ();
         }
