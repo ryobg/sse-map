@@ -187,8 +187,8 @@ load_settings ()
 
         maptrack.map = image_t {};
         maptrack.map.uv = { 0, 0, 1, .711f };
-        maptrack.offset = { 0, 0 };
-        maptrack.scale = { 1.f/(119*4096), 1.f/(94*4096) };//or 32 or 64 or else?
+        maptrack.offset = { .4766f, .3760f };
+        maptrack.scale = { 1.f/(2048*205), 1.f/(2048*205) };
         maptrack.map.file = maptrack_directory + "map.dds";
         if (json.contains ("map"))
         {

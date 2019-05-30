@@ -53,7 +53,7 @@ static inline decltype (uvtrack)::value_type
 uvtrack_point (trackpoint_t const& t)
 {
     return {{ t[0] * maptrack.scale[0] + maptrack.offset[0],
-              t[1] * maptrack.scale[1] + maptrack.offset[1] }};
+             -t[1] * maptrack.scale[1] + maptrack.offset[1] }};
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -64,13 +64,14 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
     if (!maptrack.enabled)
         return;
 
-    static float last_time = -1;
+    constexpr float nan = std::numeric_limits<float>::quiet_NaN ();
+    static trackpoint_t last_newp { nan, nan, nan, nan };
     auto curr_world = current_worldspace ();
     auto curr_loc = player_location ();
     auto curr_time = game_time ();
 
     trackpoint_t newp { curr_loc[0], curr_loc[1], curr_loc[2], curr_time };
-    if (last_time > curr_time) // Override history
+    if (last_newp[3] > curr_time) // Override history
     {
         auto it = std::upper_bound (maptrack.track.begin (), maptrack.track.end (),
                 curr_time, [] (float t, auto const& p) { return t < p[3]; });
@@ -82,7 +83,10 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
         }
     }
 
-    if (last_time == curr_time && !maptrack.track.empty ())
+    // Match of X & Y just replaces. Don't care about vertical or time differences. In Game menu,
+    // position stays the same as well as the time. This will handle conversation though not small
+    // movements...
+    if (last_newp[0] == newp[0] && last_newp[1] == newp[1] && !maptrack.track.empty ())
     {
         maptrack.track.back () = newp;
         uvtrack.back () = uvtrack_point (newp);
@@ -92,7 +96,7 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
         maptrack.track.push_back (newp);
         uvtrack.push_back (uvtrack_point (newp));
     }
-    last_time = curr_time;
+    last_newp = newp;
 
     current_location = "Location:";
     if (!curr_world.empty ())
@@ -149,13 +153,13 @@ draw_map (ImVec2 const& map_pos, ImVec2 const& map_size)
     static ImVec2 mouse_drag = {-1,-1};
     constexpr float zoom_factor = .01f;
     ImGuiIO* io = imgui.igGetIO ();
+    auto wpos = imgui.igGetWindowPos ();
 
     ImVec2 backup_uvtl = uvtl, backup_uvbr = uvbr;
     if (hovered)
     {
         if (mouse_wheel)
         {
-            auto wpos = imgui.igGetWindowPos ();
             ImVec2 zpos {
                 (io->MousePos.x - map_pos.x - wpos.x) / map_size.x,
                 (io->MousePos.y - map_pos.y - wpos.y) / map_size.y };
@@ -207,6 +211,18 @@ draw_map (ImVec2 const& map_pos, ImVec2 const& map_size)
     imgui.igImage (maptrack.map.ref, map_size, uvtl, uvbr,
             imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
 
+    if (!uvtrack.empty ())
+    {
+        auto lpp = *(ImVec2*) &uvtrack.back (); // last player position
+        if (lpp.x > uvtl.x && lpp.x < uvbr.x && lpp.y > uvtl.y && lpp.y < uvbr.y)
+        {
+            imgui.ImDrawList_AddCircleFilled (imgui.igGetWindowDrawList (),
+                ImVec2 { wpos.x + map_pos.x + map_size.x * (lpp.x - uvtl.x) / (uvbr.x - uvtl.x),
+                         wpos.y + map_pos.y + map_size.y * (lpp.y - uvtl.y) / (uvbr.y - uvtl.y)},
+                8, IM_COL32 (0,0,255,255), 12);
+        }
+    }
+
     // One frame later we handle the input, so to allow the ImGui hover test. Otherwise, if
     // scrolling on other window which happens to be in front of the map, it will zoom in/out,
     // making awkward behaviour.
@@ -242,12 +258,12 @@ render (int active)
         auto dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
         ImVec2 mapsz = imgui.igGetContentRegionAvail ();
         mapsz.x -= dragday_size.x * 12; // ~48 chars based on max text content widgets below
-        auto mappos = imgui.igGetCursorPos ();
-        mapsz.y -= mappos.y;
 
         imgui.igBeginGroup ();
         imgui.igSetNextItemWidth (mapsz.x);
         imgui.igSliderFloat ("##Time", &maptrack.time_point, 0, 1, "", 1);
+        auto mappos = imgui.igGetCursorPos ();
+        mapsz.y -= mappos.y;
         draw_map (mappos, mapsz);
         imgui.igEndGroup ();
         imgui.igSameLine (0, -1);
@@ -263,9 +279,9 @@ render (int active)
 
         imgui.igSeparator ();
         imgui.igCheckbox ("Tracking enabled", &maptrack.enabled);
-        imgui.igSetNextItemWidth (dragday_size.x);
+        imgui.igSetNextItemWidth (dragday_size.x*2);
         if (imgui.igDragFloat ("seconds between updates",
-                    &maptrack.update_period, .25f, 1.f, 60.f, "%.1f", 1))
+                    &maptrack.update_period, .1f, 1.f, 60.f, "%.1f", 1))
         {
             maptrack.update_period = std::max (1.f, maptrack.update_period);
             update_timer ();
