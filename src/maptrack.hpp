@@ -75,6 +75,18 @@ std::string current_worldspace ();
 void format_game_time (std::string&, const char*, float);
 void format_player_location (std::string&, const char*, std::array<float, 3> const&);
 
+/// Simple speed up (is it really needed? or it is for fun only?) through caching
+
+template<int Id>
+inline void format_game_time_c (std::string& out, const char* format, float value)
+{
+    static std::string cached_out;
+    static float cached_value = std::numeric_limits<float>::quiet_NaN ();
+    if (cached_value != value)
+        format_game_time (cached_out, format, cached_value = value);
+    out = cached_out;
+}
+
 //--------------------------------------------------------------------------------------------------
 
 // render.cpp
@@ -108,6 +120,7 @@ struct maptrack_t
 {
     image_t map;
     font_t font;
+    std::array<float, 2> scale, offset; ///< For conversion between texture map and world coords
 
     bool enabled = true;    ///< Is tracking, polling for data is, enabled or not
     int since_dayx = 0;     ///< Show a map track since day X, can't be less than zero actually.

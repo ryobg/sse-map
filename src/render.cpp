@@ -44,6 +44,18 @@ static bool show_settings = false,
 static HWND top_window = nullptr;
 static std::string current_location, current_time;
 
+/// The current track as pairs of X/Y coordinates upon the texture map
+static std::vector<std::array<float, 2>> uvtrack;
+
+//--------------------------------------------------------------------------------------------------
+
+static inline decltype (uvtrack)::value_type
+uvtrack_point (trackpoint_t const& t)
+{
+    return {{ t[0] * maptrack.scale[0] + maptrack.offset[0],
+              t[1] * maptrack.scale[1] + maptrack.offset[1] }};
+}
+
 //--------------------------------------------------------------------------------------------------
 
 static VOID CALLBACK
@@ -56,32 +68,39 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
     auto curr_world = current_worldspace ();
     auto curr_loc = player_location ();
     auto curr_time = game_time ();
-    log () << curr_time << std::endl;
 
     trackpoint_t newp { curr_loc[0], curr_loc[1], curr_loc[2], curr_time };
     if (last_time > curr_time) // Override history
     {
         auto it = std::upper_bound (maptrack.track.begin (), maptrack.track.end (),
                 curr_time, [] (float t, auto const& p) { return t < p[3]; });
-        maptrack.track.erase (it, maptrack.track.end ());
-        maptrack.track.push_back (newp);
+        if (it != maptrack.track.end ())
+        {
+            auto n = std::distance (it, maptrack.track.end ());
+            uvtrack.erase (uvtrack.begin () + n, uvtrack.end ());
+            maptrack.track.erase (it, maptrack.track.end ());
+        }
     }
-    else if (last_time == curr_time)
+
+    if (last_time == curr_time && !maptrack.track.empty ())
     {
-        if (maptrack.track.empty ())
-            maptrack.track.push_back (newp);
-        else maptrack.track.back () = newp;
+        maptrack.track.back () = newp;
+        uvtrack.back () = uvtrack_point (newp);
     }
-    else maptrack.track.push_back (newp);
+    else
+    {
+        maptrack.track.push_back (newp);
+        uvtrack.push_back (uvtrack_point (newp));
+    }
     last_time = curr_time;
 
-    current_location = "Current location is:";
+    current_location = "Location:";
     if (!curr_world.empty ())
         current_location += " " + curr_world;
     for (auto const& l: curr_loc)
         current_location += " " + std::to_string (int (l));
 
-    format_game_time (current_time, "Today is day %ri, %md of %lm, %Y", curr_time);
+    format_game_time (current_time, "Day %ri, %md of %lm, %Y", curr_time);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -163,23 +182,21 @@ draw_map (ImVec2 const& map_pos, ImVec2 const& map_size)
     }
     else mouse_drag.x = -1;
 
-    // Fixup various deformation (that whole algo is pita)
-    if (uvbr.x - uvtl.x > oruv[2]) // Assume map width is always greater than its height
-        uvtl = backup_uvtl, uvbr = backup_uvbr;
-
+    // Fixup various deformation (that whole function is mess)
     if (hovered && (mouse_wheel || io->MouseDown[0]))
     {
+        uvtl.x = std::max (0.f, std::min (uvtl.x, oruv[2]-max_zoom.x));
+        uvtl.y = std::max (0.f, std::min (uvtl.y, oruv[3]-max_zoom.y));
+        uvbr.x = std::max (max_zoom.x, std::min (uvbr.x, oruv[2]));
+        uvbr.y = std::max (max_zoom.y, std::min (uvbr.y, oruv[3]));
         if (mouse_wheel)
         {
-            if (std::abs (uvbr.x - uvtl.x) < max_zoom.x || std::abs (uvbr.y - uvtl.y) < max_zoom.y)
+            if (std::abs (uvbr.x - uvtl.x) < max_zoom.x
+             || std::abs (uvbr.y - uvtl.y) < max_zoom.y)
                 uvtl = backup_uvtl, uvbr = backup_uvbr;
         }
         if (io->MouseDown[0])
         {
-            uvtl.x = std::max (0.f, std::min (uvtl.x, oruv[2]-max_zoom.x));
-            uvtl.y = std::max (0.f, std::min (uvtl.y, oruv[3]-max_zoom.y));
-            //uvbr.x = std::max (max_zoom.x, std::min (uvbr.x, oruv[2]));
-            //uvbr.y = std::max (max_zoom.y, std::min (uvbr.y, oruv[3]));
             if (uvbr.x - uvtl.x != backup_uvbr.x - backup_uvtl.x)
                 uvbr.x = backup_uvbr.x, uvtl.x = backup_uvtl.x;
             if (uvbr.y - uvtl.y != backup_uvbr.y - backup_uvtl.y)
@@ -199,7 +216,7 @@ draw_map (ImVec2 const& map_pos, ImVec2 const& map_size)
     }
 
     // Not very wise, but ImGui makes it hard to disable window drag per widget. Other option
-    // probably would be to use InvisibleButton or ImageButton, but they had their own troubles.
+    // probably would be to use InvisibleButton or ImageButton, but they bring their own troubles.
     io->ConfigWindowsMoveFromTitleBarOnly = hovered;
 }
 
@@ -236,19 +253,23 @@ render (int active)
         imgui.igSameLine (0, -1);
         imgui.igBeginGroup ();
 
-        format_game_time (track_start_s, "From day %ri, %md of %lm", track_start);
-        format_game_time (track_end_s, "to day %ri, %md of %lm", track_end);
+        format_game_time_c<1> (track_start_s, "From day %ri, %md of %lm", track_start);
+        format_game_time_c<2> (track_end_s, "to day %ri, %md of %lm", track_end);
         imgui.igText (track_start_s.c_str ());
         imgui.igText (track_end_s.c_str ());
+        imgui.igDummy (ImVec2 {0,1});
         imgui.igText (current_location.c_str ());
         imgui.igText (current_time.c_str ());
 
         imgui.igSeparator ();
         imgui.igCheckbox ("Tracking enabled", &maptrack.enabled);
         imgui.igSetNextItemWidth (dragday_size.x);
-        if (imgui.igDragFloat ("seconds between updates", &maptrack.update_period,
-                    .25f, 1.f, 60.f, "%.1f", 1))
+        if (imgui.igDragFloat ("seconds between updates",
+                    &maptrack.update_period, .25f, 1.f, 60.f, "%.1f", 1))
+        {
             maptrack.update_period = std::max (1.f, maptrack.update_period);
+            update_timer ();
+        }
         imgui.igSeparator ();
 
         if (imgui.igRadioButtonBool ("Since day", since_day))
@@ -258,7 +279,7 @@ render (int active)
         if (imgui.igDragInt ("##Since day", &maptrack.since_dayx, .25f, 0, last_recorded_day, "%d"))
             maptrack.since_dayx = std::min (std::max (0, maptrack.since_dayx), last_recorded_day);
         imgui.igSameLine (0, -1);
-        format_game_time (since_dayx_s, "i.e. %md of %lm, %Y", maptrack.since_dayx);
+        format_game_time_c<3> (since_dayx_s, "i.e. %md of %lm, %Y", maptrack.since_dayx);
         imgui.igText (since_dayx_s.c_str ());
 
         if (imgui.igRadioButtonBool ("Last##X days", !since_day))
@@ -270,7 +291,7 @@ render (int active)
             maptrack.last_xdays = std::min (std::max (1, maptrack.last_xdays), last_recorded_day);
         imgui.igSameLine (0, -1);
         auto track_start2 = std::max (0.f, last_recorded_time - maptrack.last_xdays);
-        format_game_time (last_xdays_s, "days i.e. %md of %lm, %Y", track_start2);
+        format_game_time_c<4> (last_xdays_s, "days i.e. %md of %lm, %Y", track_start2);
         imgui.igText (last_xdays_s.c_str ());
 
         track_start = since_day ? maptrack.since_dayx : track_start2;
@@ -289,7 +310,10 @@ render (int active)
         if (imgui.igBeginPopup ("Clear track?", 0))
         {
             if (imgui.igButton ("Are you sure?##Clear", ImVec2 {}))
+            {
                 maptrack.track.clear ();
+                uvtrack.clear ();
+            }
             imgui.igEndPopup ();
         }
 
@@ -301,13 +325,13 @@ render (int active)
     }
     imgui.igEnd ();
 
-    extern void draw_settings ();
+    void draw_settings ();
     if (show_settings)
         draw_settings ();
-    extern void draw_saveas ();
+    void draw_saveas ();
     if (show_saveas)
         draw_saveas ();
-    extern void draw_load ();
+    void draw_load ();
     if (show_load)
         draw_load ();
 
@@ -364,7 +388,7 @@ imgui_text_resize (ImGuiInputTextCallbackData* data)
     return 0;
 }
 
-bool
+static bool
 imgui_input_text (const char* label, std::string& text, ImGuiInputTextFlags flags = 0)
 {
     return imgui.igInputText (
@@ -441,7 +465,12 @@ draw_load ()
         imgui.igBeginGroup ();
         if (imgui.igButton ("Load", ImVec2 {-1, 0}) && unsigned (namesel) < names.size ())
             if (load_track (tracks_directory + names[namesel] + ".bin"))
+            {
+                uvtrack.resize (maptrack.track.size ());
+                std::transform (maptrack.track.begin (), maptrack.track.end (), uvtrack.begin (),
+                        uvtrack_point);
             	show_load = false;
+            }
         if (imgui.igButton ("Cancel", ImVec2 {-1, 0}))
             show_load = false;
         imgui.igEndGroup ();

@@ -80,6 +80,8 @@ save_settings ()
                 { "tint", hex_string (maptrack.map.tint) },
                 { "uv", { maptrack.map.uv[0], maptrack.map.uv[1],
                           maptrack.map.uv[2], maptrack.map.uv[3] }},
+                { "scale", { maptrack.scale[0], maptrack.scale[1] }},
+                { "offset", { maptrack.offset[0], maptrack.offset[1] }}
             }},
             { "timeline", {
                 { "enabled", maptrack.enabled },
@@ -184,13 +186,19 @@ load_settings ()
         maptrack.update_period = json.value ("update period", 5.f);
 
         maptrack.map = image_t {};
-        maptrack.map.uv[3] = .711f;
+        maptrack.map.uv = { 0, 0, 1, .711f };
+        maptrack.offset = { 0, 0 };
+        maptrack.scale = { 1.f/(119*4096), 1.f/(94*4096) };//or 32 or 64 or else?
         maptrack.map.file = maptrack_directory + "map.dds";
         if (json.contains ("map"))
         {
             auto const& jmap = json.at ("map");
             auto it = jmap.at ("uv").begin ();
-            for (float& uv: maptrack.map.uv) uv = *it++;
+            for (float& v: maptrack.map.uv) v = *it++;
+            it = jmap.at ("scale").begin ();
+            for (float& v: maptrack.scale) v = *it++;
+            it = jmap.at ("offset").begin ();
+            for (float& v: maptrack.offset) v = *it++;
             maptrack.map.tint = std::stoull (jmap.at ("tint").get<std::string> (), nullptr, 0);
             maptrack.map.file = jmap.value ("file", maptrack_directory + "map.dds");
         }
