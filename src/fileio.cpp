@@ -90,7 +90,9 @@ save_settings ()
                 { "time point", maptrack.time_point }
             }},
             { "update period", maptrack.update_period },
-            { "min distance", maptrack.min_distance }
+            { "min distance", maptrack.min_distance },
+            { "track width", maptrack.track_width },
+            { "track color", hex_string (maptrack.track_color) }
         };
         save_font (json, maptrack.font);
 
@@ -186,6 +188,8 @@ load_settings ()
 
         maptrack.update_period = json.value ("update period", 5.f);
         maptrack.min_distance = json.value ("min distance", 10.f); //1:205 map scale by 5x zoom
+        maptrack.track_width = json.value ("track width", 3.f);
+        maptrack.track_color = std::stoull (json.value ("track color", "0xFF400000"), nullptr, 0);
 
         maptrack.map = image_t {};
         maptrack.map.uv = { 0, 0, 1, .711f };

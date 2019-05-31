@@ -46,19 +46,8 @@ static HWND top_window = nullptr;
 /// Shared strings for rendering
 static std::string current_location, current_time;
 
-/// Current subrange of #uvtrack selected for rendering, GUI controlled.
+/// Current subrange of #maptrack.track selected for rendering, GUI controlled.
 static float track_end = 0, track_start = 0;
-
-/// The current track as pairs of X/Y coordinates upon the texture map
-static std::vector<glm::vec2> uvtrack;
-
-//--------------------------------------------------------------------------------------------------
-
-static inline decltype (uvtrack)::value_type
-uvtrack_point (trackpoint_t const& t)
-{
-    return maptrack.offset + glm::vec2 { t.x * maptrack.scale.x, -t.y * maptrack.scale.y };
-}
 
 //--------------------------------------------------------------------------------------------------
 
@@ -80,29 +69,23 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
     trackpoint_t newp (curr_loc[0], curr_loc[1], curr_loc[2], curr_time);
 
     // Override history, for example when a game is loaded
-    if (last_newp[3] > curr_time)
+    if (last_newp.w > curr_time)
     {
         auto it = std::upper_bound (maptrack.track.begin (), maptrack.track.end (),
                 curr_time, [] (float t, auto const& p) { return t < p[3]; });
         if (it != maptrack.track.end ())
-        {
-            auto n = std::distance (it, maptrack.track.end ());
-            uvtrack.erase (uvtrack.begin () + n, uvtrack.end ());
             maptrack.track.erase (it, maptrack.track.end ());
-        }
     }
 
     // Consider only more distant points on the XY plane.
     if (!maptrack.track.empty ()
-        && maptrack.min_distance*maptrack.min_distance < glm::distance2 (newp.xy(), last_newp.xy()))
+        && maptrack.min_distance*maptrack.min_distance > glm::distance2 (newp.xy(), last_newp.xy()))
     {
         maptrack.track.back () = newp;
-        uvtrack.back () = uvtrack_point (newp);
     }
     else
     {
         maptrack.track.push_back (newp);
-        uvtrack.push_back (uvtrack_point (newp));
     }
     last_newp = newp;
 
@@ -110,7 +93,7 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
     // Though with the cache implementation, it may not make sense anymore... In any case, some
     // variables, whether strings or floats have to be shared across.
 
-    current_location = "Location:";
+    current_location;
     if (!curr_world.empty ())
         current_location += " " + curr_world;
     for (auto const& l: curr_loc)
@@ -157,30 +140,85 @@ static void
 draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
             glm::vec2 const& uvtl, glm::vec2 const& uvbr)
 {
-    static float begin = 0, end = 0;
-    if (begin != track_start)
+    constexpr float nan = std::numeric_limits<float>::quiet_NaN ();
+    static struct {
+        float start = nan, end = nan;
+        glm::vec2 wpos {nan}, wsz {nan}, uvtl {nan}, uvbr {nan};
+    } cached;
+    static std::size_t begin = 0, end = 0;
+    static std::vector<glm::vec2> uvtrack;
+
+    bool single_update = false;
+    bool range_updated = false;
+    if (cached.start != track_start)
     {
-        begin = track_start;
-        auto it1 = std::lower_bound (maptrack.track.cbegin (), maptrack.track.cend (), begin,
+        range_updated = true;
+        auto it = std::lower_bound (maptrack.track.cbegin (), maptrack.track.cend (), track_start,
                 [] (auto const& p, float t) { return p.w < t; });
-    }
-    if (end != track_end)
-    {
-        end = track_end;
-        auto it2 = std::upper_bound (maptrack.track.cbegin (), maptrack.track.cend (), begin,
-                [] (float t, auto const& p) { return t < p.w; });
+        begin = std::distance (maptrack.track.cbegin (), it);
     }
 
-    auto lpp = uvtrack.back (); // last player position
-    if (lpp.x > uvtl.x && lpp.x < uvbr.x && lpp.y > uvtl.y && lpp.y < uvbr.y)
+    if (cached.end != track_end)
     {
-        imgui.ImDrawList_AddCircleFilled (imgui.igGetWindowDrawList (),
-            to_ImVec2 (wpos + wsz * (lpp - uvtl) / (uvbr - uvtl)),
-            8, IM_COL32 (0,0,255,255), 12);
+        range_updated = true;
+        // Common case, where there is just one point appended. No need to scratch over the whole
+        // memory region just for it.
+        if (cached.end < track_end && end+2 == maptrack.track.size ())
+            ++end, single_update = true;
+        else
+        {
+            auto it = std::upper_bound (maptrack.track.cbegin (), maptrack.track.cend (), track_end,
+                    [] (float t, auto const& p) { return t < p.w; });
+            end = std::distance (maptrack.track.cbegin (), it);
+        }
     }
+
+    cached.start = track_start;
+    cached.end = track_end;
+    if (begin >= end)
+        return;
+
+    bool window_moved = (cached.wpos != wpos);
+    bool window_resized = (cached.wsz != wsz || cached.uvtl != uvtl || cached.uvbr != uvbr);
+
+    // Best case for update.
+    if (window_moved && !window_resized && !range_updated)
+    {
+        auto d = wpos - cached.wpos;
+        for (auto& p: uvtrack)
+            p += d;
+    }
+    // Currently, no idea how to speed up on range change only, hence consider full recalc as it
+    // is when the window is resized.
+    else if (window_resized || range_updated)
+    {
+        auto mul = wsz / (uvbr - uvtl);
+        uvtrack.resize (end - begin);
+
+        auto transf = [&] (trackpoint_t const& t) {
+            auto p = maptrack.offset + glm::vec2 {t.x * maptrack.scale.x, -t.y * maptrack.scale.y};
+            return wpos + mul * (p - uvtl);
+        };
+
+        if (single_update)
+            uvtrack.back () = transf (maptrack.track.back ());
+        else std::transform (
+                maptrack.track.cbegin () + begin, maptrack.track.cbegin () + end,
+                uvtrack.begin (), transf);
+    }
+    cached.wpos = wpos, cached.wsz = wsz, cached.uvtl = uvtl, cached.uvbr = uvbr;
+
+    imgui.ImDrawList_PushClipRect (imgui.igGetWindowDrawList (),
+            to_ImVec2 (wpos), to_ImVec2 (wpos+wsz), false);
+    imgui.ImDrawList_AddPolyline (imgui.igGetWindowDrawList (),
+            reinterpret_cast<ImVec2 const*> (uvtrack.data ()), int (uvtrack.size ()),
+            maptrack.track_color, false, maptrack.track_width);
+    imgui.ImDrawList_PopClipRect (imgui.igGetWindowDrawList ());
 }
 
 //--------------------------------------------------------------------------------------------------
+
+/// Handles mostly map zoom and dragging but also and the actual drawing of course
 
 static void
 draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
@@ -244,8 +282,7 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
     imgui.igImage (maptrack.map.ref, to_ImVec2 (map_size), to_ImVec2 (uvtl), to_ImVec2 (uvbr),
             imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
 
-    if (!uvtrack.empty ())
-        draw_track (wpos + map_pos, map_size, uvtl, uvbr);
+    draw_track (wpos + map_pos, map_size, uvtl, uvbr);
 
     // One frame later we handle the input, so to allow the ImGui hover test. Otherwise, if
     // scrolling on other window which happens to be in front of the map, it will zoom in/out,
@@ -308,7 +345,8 @@ render (int active)
             maptrack.update_period = std::max (1.f, maptrack.update_period);
             update_timer ();
         }
-        if (imgui.igDragFloat ("Points merge distance", &maptrack.min_distance,
+        imgui.igSetNextItemWidth (dragday_size.x*2);
+        if (imgui.igDragFloat ("points merge distance", &maptrack.min_distance,
                     1.f, 1, 1'000, "%1.0f", 1))
             maptrack.min_distance = glm::clamp (1.f, maptrack.min_distance, 1'000.f);
         imgui.igSeparator ();
@@ -353,7 +391,6 @@ render (int active)
             if (imgui.igButton ("Are you sure?##Clear", ImVec2 {}))
             {
                 maptrack.track.clear ();
-                uvtrack.clear ();
                 imgui.igCloseCurrentPopup ();
             }
             imgui.igEndPopup ();
@@ -392,11 +429,18 @@ draw_settings ()
             | ImGuiColorEditFlags_AlphaBar;
 
         imgui.igText ("Default font:");
-        ImVec4 font_c = imgui.igColorConvertU32ToFloat4 (maptrack.font.color);
-        if (imgui.igColorEdit4 ("Color##Default", (float*) &font_c, cflags))
-            maptrack.font.color = imgui.igGetColorU32Vec4 (font_c);
+        ImVec4 col = imgui.igColorConvertU32ToFloat4 (maptrack.font.color);
+        if (imgui.igColorEdit4 ("Color##Default", (float*) &col, cflags))
+            maptrack.font.color = imgui.igGetColorU32Vec4 (col);
         imgui.igSliderFloat ("Scale##Default", &maptrack.font.imfont->Scale, .5f, 2.f, "%.2f", 1);
 
+        imgui.igText ("Track");
+        col = imgui.igColorConvertU32ToFloat4 (maptrack.track_color);
+        if (imgui.igColorEdit4 ("Color##Track", (float*) &col, cflags))
+            maptrack.track_color = imgui.igGetColorU32Vec4 (col);
+        imgui.igSliderFloat ("Width##Track", &maptrack.track_width, 1.f, 20.f, "%.1f", 1);
+
+        imgui.igText ("");
         if (imgui.igButton ("Save settings", ImVec2 {}))
             save_settings ();
         imgui.igSameLine (0, -1);
@@ -507,12 +551,7 @@ draw_load ()
         imgui.igBeginGroup ();
         if (imgui.igButton ("Load", ImVec2 {-1, 0}) && unsigned (namesel) < names.size ())
             if (load_track (tracks_directory + names[namesel] + ".bin"))
-            {
-                uvtrack.resize (maptrack.track.size ());
-                std::transform (maptrack.track.begin (), maptrack.track.end (), uvtrack.begin (),
-                        uvtrack_point);
             	show_load = false;
-            }
         if (imgui.igButton ("Cancel", ImVec2 {-1, 0}))
             show_load = false;
         imgui.igEndGroup ();
