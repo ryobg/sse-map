@@ -37,6 +37,7 @@
 #define GLM_FORCE_SWIZZLE
 #include <glm/glm.hpp>
 #include <glm/gtx/range.hpp>
+#include <glm/gtx/norm.hpp>
 
 #include <array>
 #include <vector>
@@ -139,6 +140,7 @@ struct maptrack_t
     int last_xdays = 1;     ///< Map track for the last X days, also not less than zero
     float time_point = 1;   ///< Memorize where is the time line slider located
     float update_period;    ///< In seconds, how frequently to poll for data
+    float min_distance;     ///< Minimum distance between points, to register a new one
 
     /// Heavy scenario: 60 seconds by 60 minutes by 150 game hours = 540k elements
     std::vector<trackpoint_t> track;

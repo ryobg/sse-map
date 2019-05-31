@@ -89,7 +89,8 @@ save_settings ()
                 { "last xdays", maptrack.last_xdays },
                 { "time point", maptrack.time_point }
             }},
-            { "update period", maptrack.update_period }
+            { "update period", maptrack.update_period },
+            { "min distance", maptrack.min_distance }
         };
         save_font (json, maptrack.font);
 
@@ -184,6 +185,7 @@ load_settings ()
         }
 
         maptrack.update_period = json.value ("update period", 5.f);
+        maptrack.min_distance = json.value ("min distance", 10.f); //1:205 map scale by 5x zoom
 
         maptrack.map = image_t {};
         maptrack.map.uv = { 0, 0, 1, .711f };

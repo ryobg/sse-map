@@ -42,7 +42,12 @@ static bool show_settings = false,
 
 /// Current HWND, used for timer management
 static HWND top_window = nullptr;
+
+/// Shared strings for rendering
 static std::string current_location, current_time;
+
+/// Current subrange of #uvtrack selected for rendering, GUI controlled.
+static float track_end = 0, track_start = 0;
 
 /// The current track as pairs of X/Y coordinates upon the texture map
 static std::vector<glm::vec2> uvtrack;
@@ -57,20 +62,25 @@ uvtrack_point (trackpoint_t const& t)
 
 //--------------------------------------------------------------------------------------------------
 
+/// Basically adds meaningful points
+
 static VOID CALLBACK
 timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
 {
     if (!maptrack.enabled)
         return;
 
-    constexpr float nan = std::numeric_limits<float>::quiet_NaN ();
-    static trackpoint_t last_newp { nan, nan, nan, nan };
     auto curr_world = current_worldspace ();
+    if (curr_world != "Skyrim")
+        return;
     auto curr_loc = player_location ();
     auto curr_time = game_time ();
 
-    trackpoint_t newp { curr_loc[0], curr_loc[1], curr_loc[2], curr_time };
-    if (last_newp[3] > curr_time) // Override history
+    static trackpoint_t last_newp (std::numeric_limits<float>::quiet_NaN ());
+    trackpoint_t newp (curr_loc[0], curr_loc[1], curr_loc[2], curr_time);
+
+    // Override history, for example when a game is loaded
+    if (last_newp[3] > curr_time)
     {
         auto it = std::upper_bound (maptrack.track.begin (), maptrack.track.end (),
                 curr_time, [] (float t, auto const& p) { return t < p[3]; });
@@ -82,10 +92,9 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
         }
     }
 
-    // Match of X & Y just replaces. Don't care about vertical or time differences. In Game menu,
-    // position stays the same as well as the time. This will handle conversation though not small
-    // movements...
-    if (last_newp[0] == newp[0] && last_newp[1] == newp[1] && !maptrack.track.empty ())
+    // Consider only more distant points on the XY plane.
+    if (!maptrack.track.empty ()
+        && maptrack.min_distance*maptrack.min_distance < glm::distance2 (newp.xy(), last_newp.xy()))
     {
         maptrack.track.back () = newp;
         uvtrack.back () = uvtrack_point (newp);
@@ -96,6 +105,10 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
         uvtrack.push_back (uvtrack_point (newp));
     }
     last_newp = newp;
+
+    // Use the time to reduce the stress of printf-like formatting in the rendering loop below
+    // Though with the cache implementation, it may not make sense anymore... In any case, some
+    // variables, whether strings or floats have to be shared across.
 
     current_location = "Location:";
     if (!curr_world.empty ())
@@ -136,6 +149,35 @@ setup ()
     if (!update_timer ())
         return false;
     return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static void
+draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
+            glm::vec2 const& uvtl, glm::vec2 const& uvbr)
+{
+    static float begin = 0, end = 0;
+    if (begin != track_start)
+    {
+        begin = track_start;
+        auto it1 = std::lower_bound (maptrack.track.cbegin (), maptrack.track.cend (), begin,
+                [] (auto const& p, float t) { return p.w < t; });
+    }
+    if (end != track_end)
+    {
+        end = track_end;
+        auto it2 = std::upper_bound (maptrack.track.cbegin (), maptrack.track.cend (), begin,
+                [] (float t, auto const& p) { return t < p.w; });
+    }
+
+    auto lpp = uvtrack.back (); // last player position
+    if (lpp.x > uvtl.x && lpp.x < uvbr.x && lpp.y > uvtl.y && lpp.y < uvbr.y)
+    {
+        imgui.ImDrawList_AddCircleFilled (imgui.igGetWindowDrawList (),
+            to_ImVec2 (wpos + wsz * (lpp - uvtl) / (uvbr - uvtl)),
+            8, IM_COL32 (0,0,255,255), 12);
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -203,15 +245,7 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
             imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
 
     if (!uvtrack.empty ())
-    {
-        auto lpp = uvtrack.back (); // last player position
-        if (lpp.x > uvtl.x && lpp.x < uvbr.x && lpp.y > uvtl.y && lpp.y < uvbr.y)
-        {
-            imgui.ImDrawList_AddCircleFilled (imgui.igGetWindowDrawList (),
-                to_ImVec2 (wpos + map_pos + map_size * (lpp - uvtl) / (uvbr - uvtl)),
-                8, IM_COL32 (0,0,255,255), 12);
-        }
-    }
+        draw_track (wpos + map_pos, map_size, uvtl, uvbr);
 
     // One frame later we handle the input, so to allow the ImGui hover test. Otherwise, if
     // scrolling on other window which happens to be in front of the map, it will zoom in/out,
@@ -239,11 +273,9 @@ render (int active)
     if (imgui.igBegin ("SSE MapTrack", nullptr, 0))
     {
         static bool since_day = true;
-        static float track_end = 0, track_start = 0;
-        static std::string track_start_s, track_end_s,
-            current_location_s, since_dayx_s, last_xdays_s;
+        static std::string track_start_s, track_end_s, since_dayx_s, last_xdays_s;
 
-        float last_recorded_time = maptrack.track.empty () ? 0.f : maptrack.track.back ()[3];
+        float last_recorded_time = maptrack.track.empty () ? 0.f : maptrack.track.back ().w;
         int last_recorded_day = int (last_recorded_time);
         auto dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
         auto mapsz = to_vec2 (imgui.igGetContentRegionAvail ());
@@ -276,6 +308,9 @@ render (int active)
             maptrack.update_period = std::max (1.f, maptrack.update_period);
             update_timer ();
         }
+        if (imgui.igDragFloat ("Points merge distance", &maptrack.min_distance,
+                    1.f, 1, 1'000, "%1.0f", 1))
+            maptrack.min_distance = glm::clamp (1.f, maptrack.min_distance, 1'000.f);
         imgui.igSeparator ();
 
         if (imgui.igRadioButtonBool ("Since day", since_day))
@@ -283,7 +318,7 @@ render (int active)
         imgui.igSameLine (0, -1);
         imgui.igSetNextItemWidth (dragday_size.x);
         if (imgui.igDragInt ("##Since day", &maptrack.since_dayx, .25f, 0, last_recorded_day, "%d"))
-            maptrack.since_dayx = std::min (std::max (0, maptrack.since_dayx), last_recorded_day);
+            maptrack.since_dayx = glm::clamp (0, maptrack.since_dayx, last_recorded_day);
         imgui.igSameLine (0, -1);
         format_game_time_c<3> (since_dayx_s, "i.e. %md of %lm, %Y", maptrack.since_dayx);
         imgui.igText (since_dayx_s.c_str ());
@@ -294,7 +329,7 @@ render (int active)
         imgui.igSetNextItemWidth (dragday_size.x);
         if (imgui.igDragInt ("##Last X days",
                     &maptrack.last_xdays, .25f, 1, 1 +last_recorded_day, "%d"))
-            maptrack.last_xdays = std::min (std::max (1, maptrack.last_xdays), last_recorded_day);
+            maptrack.last_xdays = glm::clamp (1, maptrack.last_xdays, last_recorded_day);
         imgui.igSameLine (0, -1);
         auto track_start2 = std::max (0.f, last_recorded_time - maptrack.last_xdays);
         format_game_time_c<4> (last_xdays_s, "days i.e. %md of %lm, %Y", track_start2);
@@ -305,11 +340,11 @@ render (int active)
 
         imgui.igSeparator ();
         imgui.igText ("Track (%u points)", unsigned (maptrack.track.size ()));
-        if (imgui.igButton ("Save", ImVec2 {-1, 0}))
+        if (imgui.igButton ("Save", ImVec2 {-1,0}))
             save_track (default_track_file);
-        if (imgui.igButton ("Save As", ImVec2 {-1, 0}))
+        if (imgui.igButton ("Save As", ImVec2 {-1,0}))
             show_saveas = !show_saveas;
-        if (imgui.igButton ("Load", ImVec2 {-1, 0}))
+        if (imgui.igButton ("Load", ImVec2 {-1,0}))
             show_load = !show_load;
         if (imgui.igButton ("Clear", ImVec2 {-1,0}))
             imgui.igOpenPopup ("Clear track?");
