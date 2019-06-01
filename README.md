@@ -1,2 +1,2 @@
-# sse-map
-An weird game map idea
+# sse-maptrack
+Track on overlayed map, a mod for Skyrim.
