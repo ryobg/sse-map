@@ -60,10 +60,28 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
         return;
 
     auto curr_world = current_worldspace ();
-    if (curr_world != "Skyrim")
-        return;
+    auto curr_cell = current_cell ();
     auto curr_loc = player_location ();
     auto curr_time = game_time ();
+
+    // Use the time to reduce the stress of printf-like formatting in the rendering loop below
+    // Though with the cache implementation, it may not make sense anymore... In any case, some
+    // variables, whether strings or floats have to be shared across.
+
+    current_location.clear ();
+    if (!curr_world.empty ())
+        current_location = curr_world;
+    if (!curr_cell.empty ())
+        current_location += ", " + curr_cell;
+    for (auto const& l: curr_loc)
+        current_location += " " + std::to_string (int (l));
+
+    format_game_time (current_time, "Day %ri, %md of %lm, %Y [%h:%m]", curr_time);
+
+    if (curr_world != "Skyrim" || !curr_cell.empty ())
+        return;
+
+    // Compute the new track point:
 
     static trackpoint_t last_newp (std::numeric_limits<float>::quiet_NaN ());
     trackpoint_t newp (curr_loc[0], curr_loc[1], curr_loc[2], curr_time);
@@ -88,18 +106,6 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
         maptrack.track.push_back (newp);
     }
     last_newp = newp;
-
-    // Use the time to reduce the stress of printf-like formatting in the rendering loop below
-    // Though with the cache implementation, it may not make sense anymore... In any case, some
-    // variables, whether strings or floats have to be shared across.
-
-    current_location;
-    if (!curr_world.empty ())
-        current_location += " " + curr_world;
-    for (auto const& l: curr_loc)
-        current_location += " " + std::to_string (int (l));
-
-    format_game_time (current_time, "Day %ri, %md of %lm, %Y", curr_time);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -148,7 +154,6 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
     static std::size_t begin = 0, end = 0;
     static std::vector<glm::vec2> uvtrack;
 
-    bool single_update = false;
     bool range_updated = false;
     if (cached.start != track_start)
     {
@@ -161,16 +166,9 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
     if (cached.end != track_end)
     {
         range_updated = true;
-        // Common case, where there is just one point appended. No need to scratch over the whole
-        // memory region just for it.
-        if (cached.end < track_end && end+2 == maptrack.track.size ())
-            ++end, single_update = true;
-        else
-        {
-            auto it = std::upper_bound (maptrack.track.cbegin (), maptrack.track.cend (), track_end,
-                    [] (float t, auto const& p) { return t < p.w; });
-            end = std::distance (maptrack.track.cbegin (), it);
-        }
+        auto it = std::upper_bound (maptrack.track.cbegin (), maptrack.track.cend (), track_end,
+                [] (float t, auto const& p) { return t < p.w; });
+        end = std::distance (maptrack.track.cbegin (), it);
     }
 
     cached.start = track_start;
@@ -180,7 +178,6 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
 
     bool window_moved = (cached.wpos != wpos);
     bool window_resized = (cached.wsz != wsz || cached.uvtl != uvtl || cached.uvbr != uvbr);
-
     // Best case for update.
     if (window_moved && !window_resized && !range_updated)
     {
@@ -189,7 +186,8 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
             p += d;
     }
     // Currently, no idea how to speed up on range change only, hence consider full recalc as it
-    // is when the window is resized.
+    // is when the window is resized. Gladly, the range is done only once while the map is visible
+    // (if the player is not on auto-move).
     else if (window_resized || range_updated)
     {
         auto mul = wsz / (uvbr - uvtl);
@@ -199,10 +197,7 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
             auto p = maptrack.offset + glm::vec2 {t.x * maptrack.scale.x, -t.y * maptrack.scale.y};
             return wpos + mul * (p - uvtl);
         };
-
-        if (single_update)
-            uvtrack.back () = transf (maptrack.track.back ());
-        else std::transform (
+        std::transform (
                 maptrack.track.cbegin () + begin, maptrack.track.cbegin () + end,
                 uvtrack.begin (), transf);
     }

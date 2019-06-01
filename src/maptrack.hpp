@@ -85,6 +85,7 @@ bool setup_variables ();
 float game_time ();
 std::array<float, 3> player_location ();
 std::string current_worldspace ();
+std::string current_cell ();
 
 void format_game_time (std::string&, const char*, float);
 void format_player_location (std::string&, const char*, std::array<float, 3> const&);

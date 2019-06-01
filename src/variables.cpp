@@ -103,6 +103,10 @@ struct relocation<float*> game_epoch { 0x1ec3bc8, 0x34 };
 
 struct relocation<float*> player_pos { 0x2f26ef8, 0x54 };
 
+/// Used to differentiate between exterior (unnamed) and interior (named) cell in Skyrim worldspace
+
+struct relocation<const char*, 3> player_cell { 0x2f26ef8, 0x60, 0x28, 0 };
+
 /**
  * Current worldspace pointer from the PlayerCharacter class accroding to SKSE.
  *
@@ -170,6 +174,16 @@ std::string
 current_worldspace ()
 {
     if (auto name = worldspace_name.obtain ())
+        return name;
+    return "";
+}
+
+//--------------------------------------------------------------------------------------------------
+
+std::string
+current_cell ()
+{
+    if (auto name = player_cell.obtain ())
         return name;
     return "";
 }
@@ -283,9 +297,13 @@ setup_variables ()
     sseh.find_target ("GameTime.Offset", &game_epoch.offsets[1]);
     sseh.find_target ("PlayerCharacter", &player_pos.offsets[0]);
     sseh.find_target ("PlayerCharacter.Position", &player_pos.offsets[1]);
+    sseh.find_target ("PlayerCharacter.Cell", &player_cell.offsets[1]);
     sseh.find_target ("PlayerCharacter.Worldspace", &worldspace_name.offsets[1]);
     sseh.find_target ("Worldspace.Fullname", &worldspace_name.offsets[2]);
+    sseh.find_target ("Cell.Fullname", &player_cell.offsets[2]);
     worldspace_name.offsets[0] = player_pos.offsets[0];
+    player_cell.offsets[0] = player_pos.offsets[0];
+
     return true;
 }
 
