@@ -47,6 +47,31 @@ std::string default_track_file = tracks_directory + "default_track.bin";
 
 //--------------------------------------------------------------------------------------------------
 
+static glm::uvec2
+texture_size (ID3D11ShaderResourceView* srv)
+{
+    ID3D11Resource* res = nullptr;
+    srv->GetResource (&res);
+
+    ID3D11Texture2D* tex = nullptr;
+    HRESULT hr = res->QueryInterface (&tex);
+
+    glm::uvec2 sz {0,0};
+    if (SUCCEEDED (hr))
+    {
+        D3D11_TEXTURE2D_DESC d;
+	    tex->GetDesc (&d);
+	    sz.x = d.Width;
+	    sz.y = d.Height;
+    }
+
+    if (tex) tex->Release ();
+    if (res) res->Release ();
+    return sz;
+}
+
+//--------------------------------------------------------------------------------------------------
+
 static void
 save_font (nlohmann::json& json, font_t const& font)
 {
@@ -191,6 +216,20 @@ load_settings ()
         maptrack.track_width = json.value ("track width", 3.f);
         maptrack.track_color = std::stoull (json.value ("track color", "0xFF400000"), nullptr, 0);
 
+        maptrack.icons.file = maptrack_directory + "icons.dds";
+        maptrack.icons.icon_size = 64;
+        maptrack.icons.icon_count = 3509;
+        if (json.contains ("icons"))
+        {
+            auto const& jico = json.at ("icons");
+            maptrack.icons.icon_size = jico.at ("size");
+            maptrack.icons.icon_count = jico.at ("count");
+            maptrack.icons.file = jico.at ("file");
+        }
+        if (!sseimgui.ddsfile_texture (maptrack.icons.file.c_str (), nullptr, &maptrack.icons.ref))
+            throw std::runtime_error ("Bad icons DDS file.");
+        maptrack.icons.size = texture_size (maptrack.icons.ref).x;
+
         maptrack.map = image_t {};
         maptrack.map.uv = { 0, 0, 1, .711f };
         maptrack.offset = { .4766f, .3760f };
@@ -209,7 +248,7 @@ load_settings ()
             maptrack.map.file = jmap.value ("file", maptrack_directory + "map.dds");
         }
         if (!sseimgui.ddsfile_texture (maptrack.map.file.c_str (), nullptr, &maptrack.map.ref))
-            throw std::runtime_error ("Bad DDS file.");
+            throw std::runtime_error ("Bad map DDS file.");
     }
     catch (std::exception const& ex)
     {

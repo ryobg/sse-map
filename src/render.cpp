@@ -143,6 +143,64 @@ setup ()
 //--------------------------------------------------------------------------------------------------
 
 static void
+draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
+            glm::vec2 const& uvtl, glm::vec2 const& uvbr,
+            bool hovered)
+{
+    ImGuiIO* io = imgui.igGetIO ();
+
+    // draw here, before the GUI controls
+
+    struct icon_t
+    {
+        glm::vec2 uvtl, size;
+        std::uint32_t tint;
+    };
+    static icon_t icon = icon_t {
+        glm::vec2 (0), glm::vec2 (maptrack.icons.icon_size), IM_COL32_WHITE };
+
+    if (hovered && io->MouseDown[1])
+        imgui.igOpenPopup ("Add new icon");
+    if (imgui.igBeginPopup ("Add new icon", 0))
+    {
+        static int iconsel = 0;
+        static const std::string name = "out of " + std::to_string (maptrack.icons.icon_count);
+        static const float icon_uvsize = float (maptrack.icons.icon_size) / maptrack.icons.size;
+        static const auto stride = maptrack.icons.size / maptrack.icons.icon_size;
+
+        if (imgui.igDragInt (name.c_str (), &iconsel, 1, 1, maptrack.icons.icon_count, "%d"))
+            iconsel = glm::clamp (1, iconsel, int (maptrack.icons.icon_count));
+
+        icon.uvtl = icon_uvsize * glm::vec2 { (iconsel-1)%stride, (iconsel-1)/stride };
+
+        ImVec4 icon_color = imgui.igColorConvertU32ToFloat4 (icon.tint);
+        imgui.igImage (maptrack.icons.ref, to_ImVec2 (icon.size),
+                to_ImVec2 (icon.uvtl), to_ImVec2 (icon.uvtl + icon_uvsize),
+                icon_color, ImVec4 {0,0,0,1});
+
+        imgui.igSameLine (0, -1);
+        imgui.igBeginGroup ();
+        imgui.igButton ("New", ImVec2 {-1, 0});
+        imgui.igButton ("Modify", ImVec2 {-1, 0});
+        imgui.igButton ("Delete", ImVec2 {-1, 0});
+        imgui.igButton ("Reset", ImVec2 {-1, 0});
+        imgui.igEndGroup ();
+
+        constexpr int colflags = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayHSV
+            | ImGuiColorEditFlags_InputRGB | ImGuiColorEditFlags_PickerHueBar
+            | ImGuiColorEditFlags_AlphaBar;
+
+        if (imgui.igColorEdit4 ("Color##Default", (float*) &icon_color, colflags))
+            icon.tint = imgui.igGetColorU32Vec4 (icon_color);
+        //imgui.igSliderFloat ("Scale##Default", &maptrack.font.imfont->Scale, .5f, 2.f, "%.2f", 1);
+
+        imgui.igEndPopup ();
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static void
 draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
             glm::vec2 const& uvtl, glm::vec2 const& uvbr)
 {
@@ -277,8 +335,6 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
     imgui.igImage (maptrack.map.ref, to_ImVec2 (map_size), to_ImVec2 (uvtl), to_ImVec2 (uvbr),
             imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
 
-    draw_track (wpos + map_pos, map_size, uvtl, uvbr);
-
     // One frame later we handle the input, so to allow the ImGui hover test. Otherwise, if
     // scrolling on other window which happens to be in front of the map, it will zoom in/out,
     // making awkward behaviour.
@@ -290,6 +346,9 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
     // Not very wise, but ImGui makes it hard to disable window drag per widget. Other option
     // probably would be to use InvisibleButton or ImageButton, but they bring their own troubles.
     io->ConfigWindowsMoveFromTitleBarOnly = hovered;
+
+    draw_icons (wpos + map_pos, map_size, uvtl, uvbr, hovered);
+    draw_track (wpos + map_pos, map_size, uvtl, uvbr);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -502,7 +561,7 @@ draw_saveas ()
         {
             if (imgui.igButton ("Overwrite track?##file", ImVec2 {}))
                 if (save_track (tracks_directory + name + ".bin"))
-                    show_saveas = false;
+                    show_saveas = false, imgui.igCloseCurrentPopup ();
             imgui.igEndPopup ();
         }
     }

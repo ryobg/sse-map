@@ -114,6 +114,15 @@ struct image_t
     ID3D11ShaderResourceView* ref;
 };
 
+struct icon_atlas_t
+{
+    std::string file;
+    ID3D11ShaderResourceView* ref;
+    std::uint32_t size;       ///< Computed texture size of #ref (always a square)
+    std::uint32_t icon_size;  ///< Side size of each icon (0..1]
+    std::uint32_t icon_count; ///< Number of icons in loaded texture.
+};
+
 struct font_t
 {
     std::string name;
@@ -136,6 +145,7 @@ struct maptrack_t
     image_t map;
     font_t font;
     glm::vec2 scale, offset; ///< For conversion between texture map and world coords
+    icon_atlas_t icons;
 
     bool enabled = true;    ///< Is tracking, polling for data is, enabled or not
     int since_dayx = 0;     ///< Show a map track since day X, can't be less than zero actually.
