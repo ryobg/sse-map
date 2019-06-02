@@ -147,52 +147,112 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
             glm::vec2 const& uvtl, glm::vec2 const& uvbr,
             bool hovered)
 {
-    ImGuiIO* io = imgui.igGetIO ();
+    // Draw here, before the GUI controls. Some sort of AABB tree would be nice.
+    // The clip rects cant be on top of all map draw routines as the GUI popup below may get out of
+    // the map bounds when the mouse is clicked near the edges.
 
-    // draw here, before the GUI controls
+    imgui.ImDrawList_PushClipRect (imgui.igGetWindowDrawList (),
+            to_ImVec2 (wpos), to_ImVec2 (wpos+wsz), false);
 
-    struct icon_t
+    auto const mult = wsz / (uvbr - uvtl);
+    for (auto const& ico: maptrack.icons)
     {
-        glm::vec2 uvtl, size;
-        std::uint32_t tint;
-    };
-    static icon_t icon = icon_t {
-        glm::vec2 (0), glm::vec2 (maptrack.icons.icon_size), IM_COL32_WHITE };
+        if ((ico.tl.x > uvbr.x) * (ico.br.x < uvtl.x)
+          * (ico.tl.y > uvbr.y) * (ico.br.y < uvtl.y))
+        {
+            imgui.ImDrawList_AddImage (imgui.igGetWindowDrawList (), maptrack.icon_atlas.ref,
+                    to_ImVec2 (wpos + mult*(ico.tl-uvtl)), to_ImVec2 (wpos + mult*(ico.br-uvtl)),
+                    to_ImVec2 (ico.src), to_ImVec2 (ico.src + maptrack.icon_atlas.icon_uvsize),
+                    ico.tint);
+        }
+    }
+    imgui.ImDrawList_PopClipRect (imgui.igGetWindowDrawList ());
 
+    // Clicking on existing icon, sets it for modification. Otherwise, create new one by copying
+    // the last one selected (if any) - this is for rapid multiplication across the map.
+
+    static decltype (maptrack.icons)::iterator cico = maptrack.icons.end ();
+
+    ImGuiIO* io = imgui.igGetIO ();
     if (hovered && io->MouseDown[1])
-        imgui.igOpenPopup ("Add new icon");
-    if (imgui.igBeginPopup ("Add new icon", 0))
+    {
+        auto mpos = uvtl + (uvbr - uvtl) *
+            (to_vec2 (io->MousePos) - wpos) / glm::max (glm::vec2 (1), wsz);
+
+        auto it = std::find_if (maptrack.icons.begin (), maptrack.icons.end (),
+                [mpos] (icon_t const& i)
+                {
+                    return (i.tl.x <= mpos.x) * (i.tl.y <= mpos.y)
+                         * (i.br.x >= mpos.x) * (i.br.y >= mpos.y);
+                });
+
+        if (it != maptrack.icons.end ())
+            cico = it;
+        else
+        {
+            icon_t ico;
+            float half;
+            if (cico != maptrack.icons.end ())
+            {
+                half = (cico->br - cico->tl).x * .5f;
+                ico.src = cico->src;
+                ico.tint = cico->tint;
+            }
+            else
+            {
+                half = maptrack.icon_atlas.icon_uvsize * .5f;
+                ico.src = glm::vec2 (0);
+                ico.tint = IM_COL32_WHITE;
+            }
+            ico.tl = mpos - half;
+            ico.br = mpos + half;
+            cico = maptrack.icons.insert (maptrack.icons.end (), ico);
+        }
+        imgui.igOpenPopup ("Setup icon");
+    }
+
+    if (imgui.igBeginPopup ("Setup icon", 0))
     {
         static int iconsel = 0;
-        static const std::string name = "out of " + std::to_string (maptrack.icons.icon_count);
-        static const float icon_uvsize = float (maptrack.icons.icon_size) / maptrack.icons.size;
-        static const auto stride = maptrack.icons.size / maptrack.icons.icon_size;
+        static const std::string name = "out of " + std::to_string (maptrack.icon_atlas.icon_count);
+        static const auto stride = maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size;
 
-        if (imgui.igDragInt (name.c_str (), &iconsel, 1, 1, maptrack.icons.icon_count, "%d"))
-            iconsel = glm::clamp (1, iconsel, int (maptrack.icons.icon_count));
-
-        icon.uvtl = icon_uvsize * glm::vec2 { (iconsel-1)%stride, (iconsel-1)/stride };
-
-        ImVec4 icon_color = imgui.igColorConvertU32ToFloat4 (icon.tint);
-        imgui.igImage (maptrack.icons.ref, to_ImVec2 (icon.size),
-                to_ImVec2 (icon.uvtl), to_ImVec2 (icon.uvtl + icon_uvsize),
-                icon_color, ImVec4 {0,0,0,1});
-
-        imgui.igSameLine (0, -1);
-        imgui.igBeginGroup ();
-        imgui.igButton ("New", ImVec2 {-1, 0});
-        imgui.igButton ("Modify", ImVec2 {-1, 0});
-        imgui.igButton ("Delete", ImVec2 {-1, 0});
-        imgui.igButton ("Reset", ImVec2 {-1, 0});
-        imgui.igEndGroup ();
+        if (imgui.igDragInt (name.c_str (), &iconsel, 1, 1, maptrack.icon_atlas.icon_count, "%d"))
+            iconsel = glm::clamp (1, iconsel, int (maptrack.icon_atlas.icon_count));
+        cico->src =
+            maptrack.icon_atlas.icon_uvsize * glm::vec2 { (iconsel-1)%stride, (iconsel-1)/stride };
 
         constexpr int colflags = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayHSV
             | ImGuiColorEditFlags_InputRGB | ImGuiColorEditFlags_PickerHueBar
             | ImGuiColorEditFlags_AlphaBar;
 
-        if (imgui.igColorEdit4 ("Color##Default", (float*) &icon_color, colflags))
-            icon.tint = imgui.igGetColorU32Vec4 (icon_color);
-        //imgui.igSliderFloat ("Scale##Default", &maptrack.font.imfont->Scale, .5f, 2.f, "%.2f", 1);
+        ImVec4 newico_tint = imgui.igColorConvertU32ToFloat4 (cico->tint);
+        if (imgui.igColorEdit4 ("Tint##icon", (float*) &newico_tint, colflags))
+            cico->tint = imgui.igGetColorU32Vec4 (newico_tint);
+        float size = (cico->br - cico->tl).x * maptrack.icon_atlas.icon_size;
+        if (imgui.igSliderFloat ("Size##icon", &size, 8.f, 256.f, "%1.0f", 1))
+        {
+            float half = .5f * glm::clamp (8.f, size, 256.f);
+            auto c = .5f * (cico->tl + cico->br);
+            cico->tl = c - half;
+            cico->br = c + half;
+        }
+
+        if (imgui.igButton ("Delete", ImVec2 {-1, 0}))
+            imgui.igOpenPopup ("Delete icon?");
+        if (imgui.igBeginPopup ("Delete icon?", 0))
+        {
+            if (imgui.igButton ("Are you sure?##Icon", ImVec2 {}))
+            {
+                maptrack.icons.erase (cico);
+                cico = maptrack.icons.end ();
+                imgui.igCloseCurrentPopup ();
+            }
+            imgui.igEndPopup ();
+        }
+        // Have to close and the parent popup after deletion as it references cico all around
+        if (cico == maptrack.icons.end ())
+            imgui.igCloseCurrentPopup ();
 
         imgui.igEndPopup ();
     }

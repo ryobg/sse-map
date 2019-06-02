@@ -117,7 +117,12 @@ save_settings ()
             { "update period", maptrack.update_period },
             { "min distance", maptrack.min_distance },
             { "track width", maptrack.track_width },
-            { "track color", hex_string (maptrack.track_color) }
+            { "track color", hex_string (maptrack.track_color) },
+            { "icon atlas", {
+                { "file", maptrack.icon_atlas.file },
+                { "icon size", maptrack.icon_atlas.icon_size },
+                { "icon count", maptrack.icon_atlas.icon_count }
+            }}
         };
         save_font (json, maptrack.font);
 
@@ -216,19 +221,21 @@ load_settings ()
         maptrack.track_width = json.value ("track width", 3.f);
         maptrack.track_color = std::stoull (json.value ("track color", "0xFF400000"), nullptr, 0);
 
-        maptrack.icons.file = maptrack_directory + "icons.dds";
-        maptrack.icons.icon_size = 64;
-        maptrack.icons.icon_count = 3509;
-        if (json.contains ("icons"))
+        auto& icon_atlas = maptrack.icon_atlas;
+        icon_atlas.file = maptrack_directory + "icons.dds";
+        icon_atlas.icon_size = 64;
+        icon_atlas.icon_count = 3509;
+        if (json.contains ("icon atlas"))
         {
-            auto const& jico = json.at ("icons");
-            maptrack.icons.icon_size = jico.at ("size");
-            maptrack.icons.icon_count = jico.at ("count");
-            maptrack.icons.file = jico.at ("file");
+            auto const& jico = json.at ("icon atlas");
+            icon_atlas.icon_size = jico.at ("icon size");
+            icon_atlas.icon_count = jico.at ("icon count");
+            icon_atlas.file = jico.at ("file");
         }
-        if (!sseimgui.ddsfile_texture (maptrack.icons.file.c_str (), nullptr, &maptrack.icons.ref))
+        if (!sseimgui.ddsfile_texture (icon_atlas.file.c_str (), nullptr, &icon_atlas.ref))
             throw std::runtime_error ("Bad icons DDS file.");
-        maptrack.icons.size = texture_size (maptrack.icons.ref).x;
+        icon_atlas.size = texture_size (icon_atlas.ref).x;
+        icon_atlas.icon_uvsize = float (icon_atlas.icon_size) / icon_atlas.size;
 
         maptrack.map = image_t {};
         maptrack.map.uv = { 0, 0, 1, .711f };
