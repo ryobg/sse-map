@@ -214,7 +214,7 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
     // the last one selected (if any) - this is for rapid multiplication across the map.
 
     static decltype (maptrack.icons)::iterator ico = maptrack.icons.end ();
-    constexpr int max_text = 15; // Very likely SSO
+    constexpr int max_text = 20; // Likely SSO
 
     ImGuiIO* io = imgui.igGetIO ();
     if (hovered && io->MouseDown[1])
@@ -289,14 +289,18 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
             ico->br = c + half;
         }
 
-        imgui.igButton ("Journal", ImVec2 {});
+        if (imgui.igButton ("Open in Journal", ImVec2 {}))
+        {
+            dispatch_journal (ico->text);
+            imgui.igCloseCurrentPopup ();
+        }
 
         imgui.igSameLine (0, -1);
         if (imgui.igButton ("Delete", ImVec2 {}))
             imgui.igOpenPopup ("Delete icon?");
         if (imgui.igBeginPopup ("Delete icon?", 0))
         {
-            if (imgui.igButton ("Are you sure?##Icon", ImVec2 {}))
+            if (imgui.igButton ("Confirm##icon", ImVec2 {}))
             {
                 maptrack.icons.erase (ico);
                 ico = maptrack.icons.end ();
@@ -545,15 +549,18 @@ render (int active)
         track_start = since_day ? maptrack.since_dayx : track_start2;
         track_end = maptrack.time_point * (last_recorded_time - track_start) + track_start;
 
+        ImVec2 const button_size { dragday_size.x*2, 0 };
         imgui.igSeparator ();
         imgui.igText ("Track - %d point(s)", int (maptrack.track.size ()));
-        if (imgui.igButton ("Save##track", ImVec2 {-1,0}))
+        if (imgui.igButton ("Save##track", button_size))
             save_track (default_track_file);
-        if (imgui.igButton ("Save As##track", ImVec2 {-1,0}))
+        imgui.igSameLine (0, -1);
+        if (imgui.igButton ("Save As##track", button_size))
             show_track_saveas = !show_track_saveas;
-        if (imgui.igButton ("Load##track", ImVec2 {-1,0}))
+        if (imgui.igButton ("Load##track", button_size))
             show_track_load = !show_track_load;
-        if (imgui.igButton ("Clear##track", ImVec2 {-1,0}))
+        imgui.igSameLine (0, -1);
+        if (imgui.igButton ("Clear##track", button_size))
             imgui.igOpenPopup ("Clear track?");
         if (imgui.igBeginPopup ("Clear track?", 0))
         {
@@ -567,13 +574,15 @@ render (int active)
 
         imgui.igSeparator ();
         imgui.igText ("Icons - %d instance(s)", int (maptrack.icons.size ()));
-        if (imgui.igButton ("Save##icons", ImVec2 {-1,0}))
+        if (imgui.igButton ("Save##icons", button_size))
             save_icons (default_icons_file);
-        if (imgui.igButton ("Save As##icons", ImVec2 {-1,0}))
+        imgui.igSameLine (0, -1);
+        if (imgui.igButton ("Save As##icons", button_size))
             show_icons_saveas = !show_icons_saveas;
-        if (imgui.igButton ("Load##icons", ImVec2 {-1,0}))
+        if (imgui.igButton ("Load##icons", button_size))
             show_icons_load = !show_icons_load;
-        if (imgui.igButton ("Clear##icons", ImVec2 {-1,0}))
+        imgui.igSameLine (0, -1);
+        if (imgui.igButton ("Clear##icons", button_size))
             imgui.igOpenPopup ("Clear icons?");
         if (imgui.igBeginPopup ("Clear icons?", 0))
         {
@@ -587,7 +596,7 @@ render (int active)
         }
 
         imgui.igSeparator ();
-        if (imgui.igButton ("Settings", ImVec2 {-1,0}))
+        if (imgui.igButton ("Settings", button_size))
             show_settings = !show_settings;
 
         imgui.igEndGroup ();

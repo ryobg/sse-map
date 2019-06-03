@@ -113,6 +113,18 @@ maptrack_version (int* maj, int* min, int* patch, const char** timestamp)
 
 //--------------------------------------------------------------------------------------------------
 
+void
+dispatch_journal (std::string msg)
+{
+    if (!msg.empty ())
+    {
+        messages->Dispatch (plugin, 1,
+                const_cast<char*> (msg.c_str ()), std::strlen (msg.c_str ()), "sse-journal");
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
 static void
 handle_sseimgui_message (SKSEMessagingInterface::Message* m)
 {
