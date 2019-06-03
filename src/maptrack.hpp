@@ -57,7 +57,7 @@ to_ImVec2 (T const& v) { return ImVec2 {v.x, v.y}; }
 // skse.cpp
 
 void maptrack_version (int* maj, int* min, int* patch, const char** timestamp);
-void dispatch_journal (std::string message);
+bool dispatch_journal (std::string message);
 
 extern std::ofstream& log ();
 extern std::string logfile_path;

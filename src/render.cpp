@@ -314,8 +314,8 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
 
         if (imgui.igButton ("Open in Journal", ImVec2 {}))
         {
-            dispatch_journal (ico->text);
-            imgui.igCloseCurrentPopup ();
+            if (dispatch_journal (ico->text))
+                imgui.igCloseCurrentPopup ();
         }
 
         imgui.igSameLine (0, -1);
