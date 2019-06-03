@@ -70,11 +70,15 @@ extern sseimgui_api sseimgui;
 
 bool save_settings ();
 bool load_settings ();
-bool save_track (std::string const& file); ///< Modifies maptrack.track
-bool load_track (std::string const& file); ///< Modifies maptrack.track
+bool save_track (std::string const& file); ///< Modifies maptrack#track
+bool load_track (std::string const& file); ///< Modifies maptrack#track
+bool save_icons (std::string const& file); ///< Modifies maptrack#icons
+bool load_icons (std::string const& file); ///< Modifies maptrack#icons
 
 extern std::string tracks_directory;
+extern std::string icons_directory;
 extern std::string default_track_file;
+extern std::string default_icons_file;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -128,9 +132,10 @@ struct icon_atlas_t
 struct icon_t
 {
     glm::vec2 src;      ///< Top-left UV from the source texture icon_atlas_t#ref
+    glm::vec2 tl, br;   ///< Actual position on the map - in texture coordinates
     std::uint32_t tint;
     std::uint32_t index;///< Z order index within #icon_atlas_t
-    glm::vec2 tl, br;   ///< Actual position on the map
+    std::string text;   ///< Size constrained text for small tip info and for Journal interaction
 };
 
 struct font_t

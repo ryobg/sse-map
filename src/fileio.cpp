@@ -44,6 +44,8 @@ std::string maptrack_directory = "Data\\SKSE\\Plugins\\sse-maptrack\\";
 std::string settings_location = maptrack_directory + "settings.json";
 std::string tracks_directory = maptrack_directory + "tracks\\";
 std::string default_track_file = tracks_directory + "default_track.bin";
+std::string icons_directory = maptrack_directory + "icons\\";
+std::string default_icons_file = icons_directory + "default_icons.json";
 
 //--------------------------------------------------------------------------------------------------
 
@@ -68,6 +70,91 @@ texture_size (ID3D11ShaderResourceView* srv)
     if (tex) tex->Release ();
     if (res) res->Release ();
     return sz;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool
+save_icons (std::string const& filename)
+{
+    int maj, min, patch;
+    const char* timestamp;
+    maptrack_version (&maj, &min, &patch, &timestamp);
+
+    try
+    {
+        nlohmann::json json = {
+            { "version", {
+                { "major", maj },
+                { "minor", min },
+                { "patch", patch },
+                { "timestamp", timestamp }
+            }}
+        };
+
+        int i = 0;
+        for (auto const& ico: maptrack.icons)
+            json["icons"][std::to_string (i++)] = {
+                { "index", ico.index },
+                { "tint", hex_string (ico.tint) },
+                { "text", ico.text.c_str () },
+                { "aabb", { ico.tl.x, ico.tl.y, ico.br.x, ico.br.y }}
+            };
+
+        std::ofstream of (filename);
+        if (!of.is_open ())
+        {
+            log () << "Unable to open " << filename << " for writting." << std::endl;
+            return false;
+        }
+        of << json.dump (4);
+    }
+    catch (std::exception const& ex)
+    {
+        log () << "Unable to save icons file: " << ex.what () << std::endl;
+        return false;
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool
+load_icons (std::string const& filename)
+{
+    try
+    {
+        nlohmann::json json = nlohmann::json::object ();
+        std::ifstream fi (filename);
+        if (!fi.is_open ())
+            log () << "Unable to open " << filename << " for reading." << std::endl;
+        else
+            fi >> json;
+
+        std::vector<icon_t> icons;
+        icons.reserve (json.at ("icons").size ());
+        const auto stride = maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size;
+
+        for (auto const& jico: json["icons"])
+        {
+            icon_t i;
+            i.tint = std::stoul (jico.at ("tint").get<std::string> (), nullptr, 0);
+            i.text = jico.at ("text");
+            auto it = jico.at ("aabb").begin ();
+            i.tl.x = *it++; i.tl.y = *it++;
+            i.br.x = *it++; i.br.y = *it;
+            std::uint32_t ndx = jico.at ("index");
+            i.src = maptrack.icon_atlas.icon_uvsize * glm::vec2 { ndx % stride, ndx / stride };
+        }
+
+        maptrack.icons.swap (icons);
+    }
+    catch (std::exception const& ex)
+    {
+        log () << "Unable to load icons file: " << ex.what () << std::endl;
+        return false;
+    }
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -124,6 +211,7 @@ save_settings ()
                 { "icon count", maptrack.icon_atlas.icon_count }
             }}
         };
+
         save_font (json, maptrack.font);
 
         std::ofstream of (settings_location);

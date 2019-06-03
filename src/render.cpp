@@ -41,8 +41,10 @@
 maptrack_t maptrack = {};
 
 static bool show_settings = false,
-            show_saveas = false,
-            show_load = false;
+            show_track_saveas = false,
+            show_track_load = false,
+            show_icons_saveas = false,
+            show_icons_load = false;
 
 /// Current HWND, used for timer management
 static HWND top_window = nullptr;
@@ -52,6 +54,9 @@ static std::string current_location, current_time;
 
 /// Current subrange of #maptrack.track selected for rendering, GUI controlled.
 static float track_end = 0, track_start = 0;
+
+/// Easier than to add a lot of code, its also once per add/delete/load
+static bool icons_invalidated = false;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -158,7 +163,6 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
     static struct {
         glm::vec2 wpos {nan}, wsz {nan}, uvtl {nan}, uvbr {nan};
         std::vector<icon_image> drawlist;
-        bool icons_resized; // Easier than to add a lot of code, its also once per add/delete
     } cached;
 
     // Draw here, before the GUI controls. Some sort of AABB tree would be nice.
@@ -168,7 +172,7 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
     bool window_moved = cached.wpos != wpos;
     bool window_resized = (cached.wsz != wsz || cached.uvtl != uvtl || cached.uvbr != uvbr);
 
-    if (window_resized || cached.icons_resized)
+    if (window_resized || icons_invalidated)
     {
         cached.drawlist.clear ();
         auto const mult = wsz / (uvbr - uvtl);
@@ -204,12 +208,13 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
     }
     imgui.ImDrawList_PopClipRect (imgui.igGetWindowDrawList ());
     cached.wpos = wpos, cached.wsz = wsz, cached.uvtl = uvtl, cached.uvbr = uvbr;
-    cached.icons_resized = false;
+    icons_invalidated = false;
 
     // Clicking on existing icon, sets it for modification. Otherwise, create new one by copying
     // the last one selected (if any) - this is for rapid multiplication across the map.
 
     static decltype (maptrack.icons)::iterator ico = maptrack.icons.end ();
+    constexpr int max_text = 15; // Very likely SSO
 
     ImGuiIO* io = imgui.igGetIO ();
     if (hovered && io->MouseDown[1])
@@ -246,8 +251,9 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
             i.tl = tpos - half;
             i.br = tpos + half;
             ico = maptrack.icons.insert (maptrack.icons.end (), i);
-            cached.icons_resized = true;
+            icons_invalidated = true;
         }
+        ico->text.resize (max_text);
         imgui.igOpenPopup ("Setup icon");
     }
 
@@ -255,6 +261,8 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
     {
         static const std::string name = "out of " + std::to_string (maptrack.icon_atlas.icon_count);
         static const auto stride = maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size;
+
+        imgui.igInputText ("Small text##icon", &ico->text[0], max_text, 0, nullptr, nullptr);
 
         int user_index = ico->index + 1;
         if (imgui.igDragInt (name.c_str (), &user_index, 1, 1, maptrack.icon_atlas.icon_count,"%d"))
@@ -281,7 +289,10 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
             ico->br = c + half;
         }
 
-        if (imgui.igButton ("Delete", ImVec2 {-1, 0}))
+        imgui.igButton ("Journal", ImVec2 {});
+
+        imgui.igSameLine (0, -1);
+        if (imgui.igButton ("Delete", ImVec2 {}))
             imgui.igOpenPopup ("Delete icon?");
         if (imgui.igBeginPopup ("Delete icon?", 0))
         {
@@ -289,7 +300,7 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
             {
                 maptrack.icons.erase (ico);
                 ico = maptrack.icons.end ();
-                cached.icons_resized = true;
+                icons_invalidated = true;
                 imgui.igCloseCurrentPopup ();
             }
             imgui.igEndPopup ();
@@ -535,20 +546,41 @@ render (int active)
         track_end = maptrack.time_point * (last_recorded_time - track_start) + track_start;
 
         imgui.igSeparator ();
-        imgui.igText ("Track (%u points)", unsigned (maptrack.track.size ()));
-        if (imgui.igButton ("Save", ImVec2 {-1,0}))
+        imgui.igText ("Track - %d point(s)", int (maptrack.track.size ()));
+        if (imgui.igButton ("Save##track", ImVec2 {-1,0}))
             save_track (default_track_file);
-        if (imgui.igButton ("Save As", ImVec2 {-1,0}))
-            show_saveas = !show_saveas;
-        if (imgui.igButton ("Load", ImVec2 {-1,0}))
-            show_load = !show_load;
-        if (imgui.igButton ("Clear", ImVec2 {-1,0}))
+        if (imgui.igButton ("Save As##track", ImVec2 {-1,0}))
+            show_track_saveas = !show_track_saveas;
+        if (imgui.igButton ("Load##track", ImVec2 {-1,0}))
+            show_track_load = !show_track_load;
+        if (imgui.igButton ("Clear##track", ImVec2 {-1,0}))
             imgui.igOpenPopup ("Clear track?");
         if (imgui.igBeginPopup ("Clear track?", 0))
         {
-            if (imgui.igButton ("Are you sure?##Clear", ImVec2 {}))
+            if (imgui.igButton ("Confirm##clear track", ImVec2 {}))
             {
                 maptrack.track.clear ();
+                imgui.igCloseCurrentPopup ();
+            }
+            imgui.igEndPopup ();
+        }
+
+        imgui.igSeparator ();
+        imgui.igText ("Icons - %d instance(s)", int (maptrack.icons.size ()));
+        if (imgui.igButton ("Save##icons", ImVec2 {-1,0}))
+            save_icons (default_icons_file);
+        if (imgui.igButton ("Save As##icons", ImVec2 {-1,0}))
+            show_icons_saveas = !show_icons_saveas;
+        if (imgui.igButton ("Load##icons", ImVec2 {-1,0}))
+            show_icons_load = !show_icons_load;
+        if (imgui.igButton ("Clear##icons", ImVec2 {-1,0}))
+            imgui.igOpenPopup ("Clear icons?");
+        if (imgui.igBeginPopup ("Clear icons?", 0))
+        {
+            if (imgui.igButton ("Confirm##clear icons", ImVec2 {}))
+            {
+                maptrack.icons.clear ();
+                icons_invalidated = true;
                 imgui.igCloseCurrentPopup ();
             }
             imgui.igEndPopup ();
@@ -565,12 +597,20 @@ render (int active)
     void draw_settings ();
     if (show_settings)
         draw_settings ();
-    void draw_saveas ();
-    if (show_saveas)
-        draw_saveas ();
-    void draw_load ();
-    if (show_load)
-        draw_load ();
+
+    void draw_track_saveas ();
+    if (show_track_saveas)
+        draw_track_saveas ();
+    void draw_track_load ();
+    if (show_track_load)
+        draw_track_load ();
+
+    void draw_icons_saveas ();
+    if (show_icons_saveas)
+        draw_icons_saveas ();
+    void draw_icons_load ();
+    if (show_icons_load)
+        draw_icons_load ();
 
     imgui.igPopFont ();
 }
@@ -643,29 +683,61 @@ imgui_input_text (const char* label, std::string& text, ImGuiInputTextFlags flag
 //--------------------------------------------------------------------------------------------------
 
 void
-draw_saveas ()
+draw_icons_saveas ()
 {
     static std::string name;
-    if (imgui.igBegin ("SSE MapTrack: Save as", &show_saveas, 0))
+    if (imgui.igBegin ("SSE MapTrack: Save Icons As", &show_icons_saveas, 0))
+    {
+        imgui.igText (icons_directory.c_str ());
+        imgui_input_text ("Name", name);
+        if (imgui.igButton ("Cancel", ImVec2 {}))
+            show_icons_saveas = false;
+        imgui.igSameLine (0, -1);
+        if (imgui.igButton ("Save", ImVec2 {}))
+        {
+            auto file = icons_directory + name + ".json";
+            if (file_exists (file))
+                imgui.igOpenPopup ("Overwrite file?");
+            else if (save_icons (file))
+                show_icons_saveas = false;
+        }
+        if (imgui.igBeginPopup ("Overwrite file?", 0))
+        {
+            if (imgui.igButton ("Confirm overwrite##file", ImVec2 {}))
+                if (save_icons (icons_directory + name + ".json"))
+                    show_icons_saveas = false, imgui.igCloseCurrentPopup ();
+            imgui.igEndPopup ();
+        }
+    }
+    imgui.igEnd ();
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void
+draw_track_saveas ()
+{
+    static std::string name;
+    if (imgui.igBegin ("SSE MapTrack: Save Track As", &show_track_saveas, 0))
     {
         imgui.igText (tracks_directory.c_str ());
         imgui_input_text ("Name", name);
         if (imgui.igButton ("Cancel", ImVec2 {}))
-            show_saveas = false;
+            show_track_saveas = false;
         imgui.igSameLine (0, -1);
         if (imgui.igButton ("Save", ImVec2 {}))
         {
             auto file = tracks_directory + name + ".bin";
             if (file_exists (file))
-                imgui.igOpenPopup ("Overwrite track?");
+                imgui.igOpenPopup ("Overwrite file?");
             else if (save_track (file))
-                show_saveas = false;
+                show_track_saveas = false;
         }
-        if (imgui.igBeginPopup ("Overwrite track?", 0))
+        if (imgui.igBeginPopup ("Overwrite file?", 0))
         {
-            if (imgui.igButton ("Overwrite track?##file", ImVec2 {}))
+            if (imgui.igButton ("Confirm overwrite##file", ImVec2 {}))
                 if (save_track (tracks_directory + name + ".bin"))
-                    show_saveas = false, imgui.igCloseCurrentPopup ();
+                    show_track_saveas = false, imgui.igCloseCurrentPopup ();
             imgui.igEndPopup ();
         }
     }
@@ -685,22 +757,58 @@ extract_vector_string (void* data, int idx, const char** out_text)
 //--------------------------------------------------------------------------------------------------
 
 void
-draw_load ()
+draw_icons_load ()
 {
     static std::vector<std::string> names;
     static int namesel = -1;
     static bool reload_names = false;
     static float items = -1;
 
-    if (show_load != reload_names)
+    if (show_icons_load != reload_names)
     {
-        reload_names = show_load;
+        reload_names = show_icons_load;
+        enumerate_files (icons_directory + "*.json", names);
+        for (auto& n: names)
+            n.erase (n.find_last_of ('.'));
+    }
+
+    if (imgui.igBegin ("SSE MapTrack: Load icons", &show_icons_load, 0))
+    {
+        imgui.igText (icons_directory.c_str ());
+        imgui.igListBoxFnPtr ("##Names",
+                &namesel, extract_vector_string, &names, int (names.size ()), items);
+        imgui.igSameLine (0, -1);
+        imgui.igBeginGroup ();
+        if (imgui.igButton ("Load", ImVec2 {-1, 0}) && unsigned (namesel) < names.size ())
+            if (load_icons (icons_directory + names[namesel] + ".json"))
+            	show_icons_load = false, icons_invalidated = true;
+        if (imgui.igButton ("Cancel", ImVec2 {-1, 0}))
+            show_icons_load = false;
+        imgui.igEndGroup ();
+        items = (imgui.igGetWindowHeight () / imgui.igGetTextLineHeightWithSpacing ()) - 3;
+    }
+    imgui.igEnd ();
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void
+draw_track_load ()
+{
+    static std::vector<std::string> names;
+    static int namesel = -1;
+    static bool reload_names = false;
+    static float items = -1;
+
+    if (show_track_load != reload_names)
+    {
+        reload_names = show_track_load;
         enumerate_files (tracks_directory + "*.bin", names);
         for (auto& n: names)
             n.erase (n.find_last_of ('.'));
     }
 
-    if (imgui.igBegin ("SSE MapTrack: Load", &show_load, 0))
+    if (imgui.igBegin ("SSE MapTrack: Load track", &show_track_load, 0))
     {
         imgui.igText (tracks_directory.c_str ());
         imgui.igListBoxFnPtr ("##Names",
@@ -709,9 +817,9 @@ draw_load ()
         imgui.igBeginGroup ();
         if (imgui.igButton ("Load", ImVec2 {-1, 0}) && unsigned (namesel) < names.size ())
             if (load_track (tracks_directory + names[namesel] + ".bin"))
-            	show_load = false;
+            	show_track_load = false;
         if (imgui.igButton ("Cancel", ImVec2 {-1, 0}))
-            show_load = false;
+            show_track_load = false;
         imgui.igEndGroup ();
         items = (imgui.igGetWindowHeight () / imgui.igGetTextLineHeightWithSpacing ()) - 3;
     }
