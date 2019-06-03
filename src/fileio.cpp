@@ -143,11 +143,12 @@ load_icons (std::string const& filename)
             auto it = jico.at ("aabb").begin ();
             i.tl.x = *it++; i.tl.y = *it++;
             i.br.x = *it++; i.br.y = *it;
-            std::uint32_t ndx = jico.at ("index");
-            i.src = maptrack.icon_atlas.icon_uvsize * glm::vec2 { ndx % stride, ndx / stride };
+            i.index = jico.at ("index");
+            i.src = maptrack.icon_atlas.icon_uvsize * glm::vec2 {i.index%stride, i.index/stride};
+            icons.push_back (i);
         }
 
-        maptrack.icons.swap (icons);
+        maptrack.icons = std::move (icons);
     }
     catch (std::exception const& ex)
     {
