@@ -32,6 +32,10 @@
 
 #include <windows.h>
 
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wint-in-bool-context"
+#endif
+
 //--------------------------------------------------------------------------------------------------
 
 maptrack_t maptrack = {};
@@ -147,95 +151,134 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
             glm::vec2 const& uvtl, glm::vec2 const& uvbr,
             bool hovered)
 {
+    constexpr float nan = std::numeric_limits<float>::quiet_NaN ();
+    struct icon_image {
+        ImVec2 tl, br, src; std::uint32_t tint;
+    };
+    static struct {
+        glm::vec2 wpos {nan}, wsz {nan}, uvtl {nan}, uvbr {nan};
+        std::vector<icon_image> drawlist;
+        bool icons_resized; // Easier than to add a lot of code, its also once per add/delete
+    } cached;
+
     // Draw here, before the GUI controls. Some sort of AABB tree would be nice.
     // The clip rects cant be on top of all map draw routines as the GUI popup below may get out of
     // the map bounds when the mouse is clicked near the edges.
 
-    imgui.ImDrawList_PushClipRect (imgui.igGetWindowDrawList (),
-            to_ImVec2 (wpos), to_ImVec2 (wpos+wsz), false);
+    bool window_moved = cached.wpos != wpos;
+    bool window_resized = (cached.wsz != wsz || cached.uvtl != uvtl || cached.uvbr != uvbr);
 
-    auto const mult = wsz / (uvbr - uvtl);
-    for (auto const& ico: maptrack.icons)
+    if (window_resized || cached.icons_resized)
     {
-        if ((ico.tl.x > uvbr.x) * (ico.br.x < uvtl.x)
-          * (ico.tl.y > uvbr.y) * (ico.br.y < uvtl.y))
+        cached.drawlist.clear ();
+        auto const mult = wsz / (uvbr - uvtl);
+        for (std::size_t i = 0, n = maptrack.icons.size (); i < n; ++i)
         {
-            imgui.ImDrawList_AddImage (imgui.igGetWindowDrawList (), maptrack.icon_atlas.ref,
-                    to_ImVec2 (wpos + mult*(ico.tl-uvtl)), to_ImVec2 (wpos + mult*(ico.br-uvtl)),
-                    to_ImVec2 (ico.src), to_ImVec2 (ico.src + maptrack.icon_atlas.icon_uvsize),
-                    ico.tint);
+            auto const& ico = maptrack.icons[i];
+            if ((ico.tl.x > uvbr.x) * (ico.br.x < uvtl.x)
+              * (ico.tl.y > uvbr.y) * (ico.br.y < uvtl.y))
+            {
+                cached.drawlist.push_back (icon_image {
+                    to_ImVec2 (wpos + mult * (ico.tl - uvtl)),
+                    to_ImVec2 (wpos + mult * (ico.br - uvtl)),
+                    to_ImVec2 (ico.src), ico.tint
+                });
+            }
         }
     }
+    else if (window_moved)
+    {
+        auto d = wpos - cached.wpos;
+        for (auto& i: cached.drawlist)
+            i.tl.x += d.x, i.tl.y += d.y;
+    }
+
+    imgui.ImDrawList_PushClipRect (imgui.igGetWindowDrawList (),
+            to_ImVec2 (wpos), to_ImVec2 (wpos + wsz), false);
+    for (auto& i: cached.drawlist)
+    {
+        imgui.ImDrawList_AddImage (imgui.igGetWindowDrawList (), maptrack.icon_atlas.ref,
+                i.tl, i.br, i.src,
+                ImVec2 { i.src.x + maptrack.icon_atlas.icon_uvsize,
+                         i.src.y + maptrack.icon_atlas.icon_uvsize }, i.tint);
+    }
     imgui.ImDrawList_PopClipRect (imgui.igGetWindowDrawList ());
+    cached.wpos = wpos, cached.wsz = wsz, cached.uvtl = uvtl, cached.uvbr = uvbr;
+    cached.icons_resized = false;
 
     // Clicking on existing icon, sets it for modification. Otherwise, create new one by copying
     // the last one selected (if any) - this is for rapid multiplication across the map.
 
-    static decltype (maptrack.icons)::iterator cico = maptrack.icons.end ();
+    static decltype (maptrack.icons)::iterator ico = maptrack.icons.end ();
 
     ImGuiIO* io = imgui.igGetIO ();
     if (hovered && io->MouseDown[1])
     {
-        auto mpos = uvtl + (uvbr - uvtl) *
-            (to_vec2 (io->MousePos) - wpos) / glm::max (glm::vec2 (1), wsz);
+        auto tpos = uvtl + (uvbr - uvtl) * (to_vec2 (io->MousePos) - wpos) / wsz;
 
         auto it = std::find_if (maptrack.icons.begin (), maptrack.icons.end (),
-                [mpos] (icon_t const& i)
+                [tpos] (icon_t const& i)
                 {
-                    return (i.tl.x <= mpos.x) * (i.tl.y <= mpos.y)
-                         * (i.br.x >= mpos.x) * (i.br.y >= mpos.y);
+                    return (i.tl.x <= tpos.x) * (i.tl.y <= tpos.y)
+                         * (i.br.x >= tpos.x) * (i.br.y >= tpos.y);
                 });
 
         if (it != maptrack.icons.end ())
-            cico = it;
+            ico = it;
         else
         {
-            icon_t ico;
+            icon_t i;
             float half;
-            if (cico != maptrack.icons.end ())
+            if (ico != maptrack.icons.end ())
             {
-                half = (cico->br - cico->tl).x * .5f;
-                ico.src = cico->src;
-                ico.tint = cico->tint;
+                half = (ico->br - ico->tl).x * .5f;
+                i.src = ico->src;
+                i.tint = ico->tint;
+                i.index = ico->index;
             }
             else
             {
                 half = maptrack.icon_atlas.icon_uvsize * .5f;
-                ico.src = glm::vec2 (0);
-                ico.tint = IM_COL32_WHITE;
+                i.src = glm::vec2 (0);
+                i.tint = IM_COL32_WHITE;
+                i.index = 0;
             }
-            ico.tl = mpos - half;
-            ico.br = mpos + half;
-            cico = maptrack.icons.insert (maptrack.icons.end (), ico);
+            i.tl = tpos - half;
+            i.br = tpos + half;
+            ico = maptrack.icons.insert (maptrack.icons.end (), i);
+            cached.icons_resized = true;
         }
         imgui.igOpenPopup ("Setup icon");
     }
 
     if (imgui.igBeginPopup ("Setup icon", 0))
     {
-        static int iconsel = 0;
         static const std::string name = "out of " + std::to_string (maptrack.icon_atlas.icon_count);
         static const auto stride = maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size;
 
-        if (imgui.igDragInt (name.c_str (), &iconsel, 1, 1, maptrack.icon_atlas.icon_count, "%d"))
-            iconsel = glm::clamp (1, iconsel, int (maptrack.icon_atlas.icon_count));
-        cico->src =
-            maptrack.icon_atlas.icon_uvsize * glm::vec2 { (iconsel-1)%stride, (iconsel-1)/stride };
+        int user_index = ico->index + 1;
+        if (imgui.igDragInt (name.c_str (), &user_index, 1, 1, maptrack.icon_atlas.icon_count,"%d"))
+        {
+            ico->index = glm::clamp (1, user_index, int (maptrack.icon_atlas.icon_count)) - 1;
+            ico->src = maptrack.icon_atlas.icon_uvsize
+                * glm::vec2 { ico->index % stride, ico->index / stride };
+        }
 
         constexpr int colflags = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayHSV
             | ImGuiColorEditFlags_InputRGB | ImGuiColorEditFlags_PickerHueBar
             | ImGuiColorEditFlags_AlphaBar;
 
-        ImVec4 newico_tint = imgui.igColorConvertU32ToFloat4 (cico->tint);
-        if (imgui.igColorEdit4 ("Tint##icon", (float*) &newico_tint, colflags))
-            cico->tint = imgui.igGetColorU32Vec4 (newico_tint);
-        float size = (cico->br - cico->tl).x * maptrack.icon_atlas.icon_size;
-        if (imgui.igSliderFloat ("Size##icon", &size, 8.f, 256.f, "%1.0f", 1))
+        ImVec4 color = imgui.igColorConvertU32ToFloat4 (ico->tint);
+        if (imgui.igColorEdit4 ("Tint##icon", (float*) &color, colflags))
+            ico->tint = imgui.igGetColorU32Vec4 (color);
+
+        float scale = (ico->br - ico->tl).x * maptrack.icon_atlas.icon_size;
+        if (imgui.igSliderFloat ("Scale##icon", &scale, .25f, 4.f, "%.2f", 1))
         {
-            float half = .5f * glm::clamp (8.f, size, 256.f);
-            auto c = .5f * (cico->tl + cico->br);
-            cico->tl = c - half;
-            cico->br = c + half;
+            float half = glm::clamp (.25f, scale, 4.f) * .5 * maptrack.icon_atlas.icon_uvsize;
+            glm::vec2 c = .5f * (ico->tl + ico->br);
+            ico->tl = c - half;
+            ico->br = c + half;
         }
 
         if (imgui.igButton ("Delete", ImVec2 {-1, 0}))
@@ -244,14 +287,15 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
         {
             if (imgui.igButton ("Are you sure?##Icon", ImVec2 {}))
             {
-                maptrack.icons.erase (cico);
-                cico = maptrack.icons.end ();
+                maptrack.icons.erase (ico);
+                ico = maptrack.icons.end ();
+                cached.icons_resized = true;
                 imgui.igCloseCurrentPopup ();
             }
             imgui.igEndPopup ();
         }
-        // Have to close and the parent popup after deletion as it references cico all around
-        if (cico == maptrack.icons.end ())
+        // Have to close and the parent popup after deletion as it references ico all around
+        if (ico == maptrack.icons.end ())
             imgui.igCloseCurrentPopup ();
 
         imgui.igEndPopup ();
@@ -305,7 +349,7 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
     }
     // Currently, no idea how to speed up on range change only, hence consider full recalc as it
     // is when the window is resized. Gladly, the range is done only once while the map is visible
-    // (if the player is not on auto-move).
+    // if the player is not on auto-move.
     else if (window_resized || range_updated)
     {
         auto mul = wsz / (uvbr - uvtl);

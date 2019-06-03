@@ -124,10 +124,12 @@ struct icon_atlas_t
     std::uint32_t icon_count; ///< Number of icons in loaded texture.
 };
 
+/// This structure may be compressed a bit later
 struct icon_t
 {
     glm::vec2 src;      ///< Top-left UV from the source texture icon_atlas_t#ref
     std::uint32_t tint;
+    std::uint32_t index;///< Z order index within #icon_atlas_t
     glm::vec2 tl, br;   ///< Actual position on the map
 };
 
