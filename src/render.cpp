@@ -38,6 +38,7 @@ maptrack_t maptrack = {};
 
 static bool show_settings = false,
             show_track_saveas = false,
+            show_track_summary = false,
             show_track_load = false,
             show_icons_saveas = false,
             show_icons_load = false;
@@ -86,31 +87,7 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
     if (curr_world != "Skyrim" || !curr_cell.empty ())
         return;
 
-    // Compute the new track point:
-
-    static trackpoint_t last_newp (std::numeric_limits<float>::quiet_NaN ());
-    trackpoint_t newp (curr_loc[0], curr_loc[1], curr_loc[2], curr_time);
-
-    // Override history, for example when a game is loaded
-    if (last_newp.w > curr_time)
-    {
-        auto it = std::upper_bound (maptrack.track.begin (), maptrack.track.end (),
-                curr_time, [] (float t, auto const& p) { return t < p[3]; });
-        if (it != maptrack.track.end ())
-            maptrack.track.erase (it, maptrack.track.end ());
-    }
-
-    // Consider only more distant points on the XY plane.
-    if (!maptrack.track.empty ()
-        && maptrack.min_distance*maptrack.min_distance > glm::distance2 (newp.xy(), last_newp.xy()))
-    {
-        maptrack.track.back () = newp;
-    }
-    else
-    {
-        maptrack.track.push_back (newp);
-    }
-    last_newp = newp;
+    maptrack.track.add_point (glm::vec4 { curr_loc[0], curr_loc[1], curr_loc[2], curr_time });
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -346,68 +323,55 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
             glm::vec2 const& uvtl, glm::vec2 const& uvbr)
 {
     constexpr float nan = std::numeric_limits<float>::quiet_NaN ();
-    static struct {
-        float start = nan, end = nan;
+    static struct
+    {
+        float tstart {nan}, tend {nan};
         glm::vec2 wpos {nan}, wsz {nan}, uvtl {nan}, uvbr {nan};
-    } cached;
-    static std::size_t begin = 0, end = 0;
-    static std::vector<glm::vec2> uvtrack;
-
-    bool range_updated = false;
-    if (cached.start != track_start)
-    {
-        range_updated = true;
-        auto it = std::lower_bound (maptrack.track.cbegin (), maptrack.track.cend (), track_start,
-                [] (auto const& p, float t) { return p.w < t; });
-        begin = std::distance (maptrack.track.cbegin (), it);
+        std::vector<glm::vec2> uvtrack;
     }
+    cached;
 
-    if (cached.end != track_end)
-    {
-        range_updated = true;
-        auto it = std::upper_bound (maptrack.track.cbegin (), maptrack.track.cend (), track_end,
-                [] (float t, auto const& p) { return t < p.w; });
-        end = std::distance (maptrack.track.cbegin (), it);
-    }
-
-    cached.start = track_start;
-    cached.end = track_end;
-    if (begin >= end)
+    auto time_range = maptrack.track.time_range (track_start, track_end);
+    if (time_range.first == time_range.second)
         return;
 
     bool window_moved = (cached.wpos != wpos);
     bool window_resized = (cached.wsz != wsz || cached.uvtl != uvtl || cached.uvbr != uvbr);
+    bool range_updated = (cached.tstart != track_start || cached.tend != track_end);
+
     // Best case for update.
     if (window_moved && !window_resized && !range_updated)
     {
         auto d = wpos - cached.wpos;
-        for (auto& p: uvtrack)
+        for (auto& p: cached.uvtrack)
             p += d;
     }
+
     // Currently, no idea how to speed up on range change only, hence consider full recalc as it
     // is when the window is resized. Gladly, the range is done only once while the map is visible
     // if the player is not on auto-move.
     else if (window_resized || range_updated)
     {
         auto mul = wsz / (uvbr - uvtl);
-        uvtrack.resize (end - begin);
+        cached.uvtrack.resize (std::distance (time_range.first, time_range.second));
 
-        auto transf = [&] (trackpoint_t const& t) {
+        auto transf = [&] (glm::vec4 const& t)
+        {
             auto p = maptrack.offset + glm::vec2 {t.x * maptrack.scale.x, -t.y * maptrack.scale.y};
             return wpos + mul * (p - uvtl);
         };
-        std::transform (
-                maptrack.track.cbegin () + begin, maptrack.track.cbegin () + end,
-                uvtrack.begin (), transf);
+        std::transform (time_range.first, time_range.second, cached.uvtrack.begin (), transf);
     }
-    cached.wpos = wpos, cached.wsz = wsz, cached.uvtl = uvtl, cached.uvbr = uvbr;
 
     imgui.ImDrawList_PushClipRect (imgui.igGetWindowDrawList (),
             to_ImVec2 (wpos), to_ImVec2 (wpos+wsz), false);
     imgui.ImDrawList_AddPolyline (imgui.igGetWindowDrawList (),
-            reinterpret_cast<ImVec2 const*> (uvtrack.data ()), int (uvtrack.size ()),
+            reinterpret_cast<ImVec2 const*> (cached.uvtrack.data ()), int (cached.uvtrack.size ()),
             maptrack.track_color, false, maptrack.track_width);
     imgui.ImDrawList_PopClipRect (imgui.igGetWindowDrawList ());
+
+    cached.tstart = track_start, cached.tend = track_end;
+    cached.wpos = wpos, cached.wsz = wsz, cached.uvtl = uvtl, cached.uvbr = uvbr;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -507,7 +471,7 @@ render (int active)
         static bool since_day = true;
         static std::string track_start_s, track_end_s, since_dayx_s, last_xdays_s;
 
-        float last_recorded_time = maptrack.track.empty () ? 0.f : maptrack.track.back ().w;
+        float last_recorded_time = maptrack.track.last_time ();
         int last_recorded_day = int (last_recorded_time);
         auto dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
         auto mapsz = to_vec2 (imgui.igGetContentRegionAvail ());
@@ -579,6 +543,9 @@ render (int active)
         imgui.igSameLine (0, -1);
         if (imgui.igButton ("Save As##track", button_size))
             show_track_saveas = !show_track_saveas;
+        imgui.igSameLine (0, -1);
+        if (imgui.igButton ("Summary##track", button_size))
+            show_track_summary = !show_track_summary;
         if (imgui.igButton ("Load##track", button_size))
             show_track_load = !show_track_load;
         imgui.igSameLine (0, -1);
@@ -635,6 +602,9 @@ render (int active)
     void draw_track_load ();
     if (show_track_load)
         draw_track_load ();
+    void draw_track_summary ();
+    if (show_track_summary)
+        draw_track_summary ();
 
     void draw_icons_saveas ();
     if (show_icons_saveas)
@@ -816,7 +786,7 @@ draw_icons_load ()
         if (imgui.igButton ("Cancel", ImVec2 {-1, 0}))
             show_icons_load = false;
         imgui.igEndGroup ();
-        items = (imgui.igGetWindowHeight () / imgui.igGetTextLineHeightWithSpacing ()) - 3;
+        items = (imgui.igGetWindowHeight () / imgui.igGetTextLineHeightWithSpacing ()) - 4;
     }
     imgui.igEnd ();
 }
@@ -852,7 +822,41 @@ draw_track_load ()
         if (imgui.igButton ("Cancel", ImVec2 {-1, 0}))
             show_track_load = false;
         imgui.igEndGroup ();
-        items = (imgui.igGetWindowHeight () / imgui.igGetTextLineHeightWithSpacing ()) - 3;
+        items = (imgui.igGetWindowHeight () / imgui.igGetTextLineHeightWithSpacing ()) - 4;
+    }
+    imgui.igEnd ();
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static float
+trackpoint_height (void* data, int idx) {
+    return std::next (*reinterpret_cast<track_t::const_iterator*> (data), idx)->w;
+}
+
+void
+draw_track_summary ()
+{
+    if (imgui.igBegin ("SSE MapTrack: Track summary", &show_track_summary, 0))
+    {
+        auto t = maptrack.track.time_range (track_start, track_end);
+        imgui.igPlotLinesFnPtr ("Altitude histogram", trackpoint_height, &t.first,
+                int (std::distance (t.first, t.second)), 0, nullptr, 0, 0, ImVec2 {});
+
+        auto bb = maptrack.track.bounding_box ();
+        imgui.igText ("Bounding box (min): %6d %6d %6d",
+                int (bb.first.x), int (bb.first.y), int (bb.first.z));
+        imgui.igText ("Bounding box (max): %6d %6d %6d",
+                int (bb.second.x), int (bb.second.y), int (bb.second.z));
+
+        static float len = 0;
+        static float old_t0 = -1, old_t1 = -1;
+        if (track_start != old_t0 || track_end != old_t1)
+        {
+            old_t0 = track_start, old_t1 = track_end;
+            len = track_t::compute_length (t.first, t.second);
+        }
+        imgui.igText ("Length: %.0f", len);
     }
     imgui.igEnd ();
 }

@@ -363,13 +363,6 @@ write_binary (Stream& os, T const& value)
     os.write (reinterpret_cast<const char*> (&value), sizeof (T));
 }
 
-template<class T, class Stream>
-inline void
-write_binary (Stream& os, T const* value, std::size_t size)
-{
-    os.write (reinterpret_cast<const char*> (value), size);
-}
-
 //--------------------------------------------------------------------------------------------------
 
 bool
@@ -388,8 +381,7 @@ save_track (std::string const& file)
         write_binary (f, maj);
         write_binary (f, min);
         write_binary (f, patch);
-        write_binary (f, std::uint32_t (maptrack.track.size ()));
-        write_binary (f, maptrack.track.data (), maptrack.track.size () * sizeof (trackpoint_t));
+        maptrack.track.save_binary (f);
     }
     catch (std::exception const& ex)
     {
@@ -410,13 +402,6 @@ read_binary (Stream& is)
     return value;
 }
 
-template<class T, class Stream>
-inline void
-read_binary (Stream& is, T* value, std::size_t size)
-{
-    is.read (reinterpret_cast<char*> (value), size);
-}
-
 //--------------------------------------------------------------------------------------------------
 
 bool
@@ -433,8 +418,7 @@ load_track (std::string const& file)
         read_binary<std::int32_t> (f);
         read_binary<std::int32_t> (f);
         read_binary<std::int32_t> (f);
-        maptrack.track.resize (read_binary<std::uint32_t> (f));
-        read_binary (f, maptrack.track.data (), maptrack.track.size () * sizeof (trackpoint_t));
+        maptrack.track.load_binary (f);
     }
     catch (std::exception const& ex)
     {

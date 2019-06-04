@@ -28,13 +28,21 @@
 #ifndef MAPTRACK_HPP
 #define MAPTRACK_HPP
 
+#include "track.hpp"
+
 #include <sse-imgui/sse-imgui.h>
 #include <utils/winutils.hpp>
 
 #include <d3d11.h>
 
+#ifndef GLM_FORCE_CXX14
 #define GLM_FORCE_CXX14
+#endif
+
+#ifndef GLM_FORCE_SWIZZLE
 #define GLM_FORCE_SWIZZLE
+#endif
+
 #include <glm/glm.hpp>
 #include <glm/gtx/range.hpp>
 #include <glm/gtx/norm.hpp>
@@ -176,7 +184,7 @@ struct maptrack_t
     std::uint32_t track_color;
 
     /// Heavy scenario: 60 seconds by 60 minutes by 150 game hours = 540k elements
-    std::vector<trackpoint_t> track;
+    track_t track;
 };
 
 extern maptrack_t maptrack;
