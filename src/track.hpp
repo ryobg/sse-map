@@ -79,7 +79,8 @@ public:
         return values.size ();
     }
     auto bounding_box () const {
-        return std::make_pair (lo, hi);
+        return values.empty () ? std::make_pair (glm::vec4 {0}, glm::vec4 {0})
+                               : std::make_pair (lo, hi);
     }
 
     void clear ()
@@ -106,6 +107,8 @@ public:
         is.read (reinterpret_cast<char*> (&size), sizeof (size));
         values.resize (size);
         is.read (reinterpret_cast<char*> (values.data ()), size * sizeof (glm::vec4));
+        update_lohi ();
+        invalidate_time_range ();
     }
 
     /// Adds new point, eventually overriding the history (for example when a game is loaded)
@@ -122,15 +125,11 @@ public:
                         values.begin (), values.end (), p.w,
                         [] (float t, auto const& p) { return t < p.w; }),
                         values.end ());
-                reset_lohi ();
-                for (auto const& g: values)
-                    update_lohi (g);
+                update_lohi ();
             }
-            if (merge_distance2 < glm::distance2 (p.xy (), values.back ().xy ()))
-            {
-                values.push_back (glm::vec4 {});
-            }
-        }
+            if (merge_distance2 < glm::distance2 (p.xyz (), values.back ().xyz ()))
+               values.push_back (glm::vec4 {});
+        } else values.push_back (glm::vec4 {});
 
         values.back () = p;
         update_lohi (p);
@@ -138,12 +137,15 @@ public:
     }
 
     /// Quick access into subrange of tracked points between a given time range
-    auto time_range (float t_start, float t_end)
+    std::pair<const_iterator, const_iterator>
+    time_range (float t_start, float t_end, bool& updated)
     {
         Expects (std::isfinite (t_start) && std::isfinite (t_end) && t_start <= t_end);
+        updated = false;
 
         if (time_start != t_start)
         {
+            updated = true;
             time_start = t_start;
             time_start_it = std::lower_bound (
                     values.cbegin (), values.cend (), time_start,
@@ -152,6 +154,7 @@ public:
 
         if (time_end != t_end)
         {
+            updated = true;
             time_end = t_end;
             time_end_it = std::upper_bound (
                     values.cbegin (), values.cend (), time_end,
@@ -161,12 +164,12 @@ public:
         return std::make_pair (time_start_it, time_end_it);
     }
 
-    static float compute_length (const_iterator first, const_iterator last)
+    static double compute_length (const_iterator first, const_iterator last)
     {
         if (first == last)
-            return 0.f;
+            return 0;
         glm::vec3 p = first->xyz ();
-        return std::accumulate (++first, last, 0.f, [&p] (auto const& acc, auto const& v)
+        return std::accumulate (++first, last, .0, [&p] (auto const& acc, auto const& v)
         {
             auto vp = v.xyz ();
             return acc + glm::distance (std::exchange (p, vp), vp);
@@ -175,8 +178,8 @@ public:
 
 private:
 
-    static constexpr float max_float = std::numeric_limits<float>::max ();
-    static constexpr float min_float = std::numeric_limits<float>::min ();
+    static constexpr float max_float =  16'777'216.f,   ///< Some sane limits, because:
+                           min_float = -16'777'216.f;   ///< This turns to zero if min limit values
     static constexpr float nan_float = std::numeric_limits<float>::quiet_NaN ();
 
     std::vector<glm::vec4> values;
@@ -196,11 +199,16 @@ private:
         lo = glm::vec4 { max_float };
         hi = glm::vec4 { min_float };
     }
-
     inline void update_lohi (glm::vec4 const& p)
     {
         lo = glm::min (lo, p);
         hi = glm::max (hi, p);
+    }
+    inline void update_lohi ()
+    {
+        reset_lohi ();
+        for (auto const& g: values)
+            update_lohi (g);
     }
 };
 

@@ -309,6 +309,7 @@ load_settings ()
         maptrack.min_distance = json.value ("min distance", 10.f); //1:205 map scale by 5x zoom
         maptrack.track_width = json.value ("track width", 3.f);
         maptrack.track_color = std::stoull (json.value ("track color", "0xFF400000"), nullptr, 0);
+        maptrack.track.merge_distance (maptrack.min_distance);
 
         auto& icon_atlas = maptrack.icon_atlas;
         icon_atlas.file = maptrack_directory + "icons.dds";

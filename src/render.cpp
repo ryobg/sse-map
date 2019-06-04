@@ -41,7 +41,8 @@ static bool show_settings = false,
             show_track_summary = false,
             show_track_load = false,
             show_icons_saveas = false,
-            show_icons_load = false;
+            show_icons_load = false,
+            show_icons_atlas = false;
 
 /// Current HWND, used for timer management
 static HWND top_window = nullptr;
@@ -50,7 +51,11 @@ static HWND top_window = nullptr;
 static std::string current_location, current_time;
 
 /// Current subrange of #maptrack.track selected for rendering, GUI controlled.
-static float track_end = 0, track_start = 0;
+static struct {
+    track_t::const_iterator first, second;
+    bool draw_invalidated, length_invalidated;
+}
+track_range = {};
 
 /// Easier than to add a lot of code, its also once per add/delete/load
 static bool icons_invalidated = false;
@@ -325,22 +330,19 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
     constexpr float nan = std::numeric_limits<float>::quiet_NaN ();
     static struct
     {
-        float tstart {nan}, tend {nan};
         glm::vec2 wpos {nan}, wsz {nan}, uvtl {nan}, uvbr {nan};
         std::vector<glm::vec2> uvtrack;
     }
     cached;
 
-    auto time_range = maptrack.track.time_range (track_start, track_end);
-    if (time_range.first == time_range.second)
+    if (track_range.first == track_range.second)
         return;
 
     bool window_moved = (cached.wpos != wpos);
     bool window_resized = (cached.wsz != wsz || cached.uvtl != uvtl || cached.uvbr != uvbr);
-    bool range_updated = (cached.tstart != track_start || cached.tend != track_end);
 
     // Best case for update.
-    if (window_moved && !window_resized && !range_updated)
+    if (window_moved && !window_resized && !track_range.draw_invalidated)
     {
         auto d = wpos - cached.wpos;
         for (auto& p: cached.uvtrack)
@@ -350,17 +352,17 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
     // Currently, no idea how to speed up on range change only, hence consider full recalc as it
     // is when the window is resized. Gladly, the range is done only once while the map is visible
     // if the player is not on auto-move.
-    else if (window_resized || range_updated)
+    else if (window_resized || track_range.draw_invalidated)
     {
         auto mul = wsz / (uvbr - uvtl);
-        cached.uvtrack.resize (std::distance (time_range.first, time_range.second));
+        cached.uvtrack.resize (std::distance (track_range.first, track_range.second));
 
         auto transf = [&] (glm::vec4 const& t)
         {
             auto p = maptrack.offset + glm::vec2 {t.x * maptrack.scale.x, -t.y * maptrack.scale.y};
             return wpos + mul * (p - uvtl);
         };
-        std::transform (time_range.first, time_range.second, cached.uvtrack.begin (), transf);
+        std::transform (track_range.first, track_range.second, cached.uvtrack.begin (), transf);
     }
 
     imgui.ImDrawList_PushClipRect (imgui.igGetWindowDrawList (),
@@ -370,8 +372,8 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
             maptrack.track_color, false, maptrack.track_width);
     imgui.ImDrawList_PopClipRect (imgui.igGetWindowDrawList ());
 
-    cached.tstart = track_start, cached.tend = track_end;
     cached.wpos = wpos, cached.wsz = wsz, cached.uvtl = uvtl, cached.uvbr = uvbr;
+    track_range.draw_invalidated = false;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -437,8 +439,10 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
         }
     }
 
-    imgui.igImage (maptrack.map.ref, to_ImVec2 (map_size), to_ImVec2 (uvtl), to_ImVec2 (uvbr),
-            imgui.igColorConvertU32ToFloat4 (maptrack.map.tint), ImVec4 {0,0,0,0});
+    imgui.igInvisibleButton ("Map", to_ImVec2 (map_size));
+    imgui.ImDrawList_AddImage (imgui.igGetWindowDrawList (), maptrack.map.ref,
+            to_ImVec2 (wpos + map_pos), to_ImVec2 (wpos + map_pos + map_size),
+            to_ImVec2 (uvtl), to_ImVec2 (uvbr), IM_COL32_WHITE);
 
     // One frame later we handle the input, so to allow the ImGui hover test. Otherwise, if
     // scrolling on other window which happens to be in front of the map, it will zoom in/out,
@@ -447,10 +451,6 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
     {
         mouse_wheel = io->MouseWheel ? (io->MouseWheel > 0 ? +1 : -1) : 0;
     }
-
-    // Not very wise, but ImGui makes it hard to disable window drag per widget. Other option
-    // probably would be to use InvisibleButton or ImageButton, but they bring their own troubles.
-    io->ConfigWindowsMoveFromTitleBarOnly = hovered;
 
     draw_icons (wpos + map_pos, map_size, uvtl, uvbr, hovered);
     draw_track (wpos + map_pos, map_size, uvtl, uvbr);
@@ -487,8 +487,6 @@ render (int active)
         imgui.igSameLine (0, -1);
         imgui.igBeginGroup ();
 
-        format_game_time_c<1> (track_start_s, "From day %ri, %md of %lm", track_start);
-        format_game_time_c<2> (track_end_s, "to day %ri, %md of %lm", track_end);
         imgui.igText (track_start_s.c_str ());
         imgui.igText (track_end_s.c_str ());
         imgui.igDummy (ImVec2 {0,1});
@@ -507,7 +505,10 @@ render (int active)
         imgui.igSetNextItemWidth (dragday_size.x*2);
         if (imgui.igDragFloat ("points merge distance", &maptrack.min_distance,
                     1.f, 1, 1'000, "%1.0f", 1))
+        {
             maptrack.min_distance = glm::clamp (1.f, maptrack.min_distance, 1'000.f);
+            maptrack.track.merge_distance (maptrack.min_distance);
+        }
         imgui.igSeparator ();
 
         if (imgui.igRadioButtonBool ("Since day", since_day))
@@ -532,8 +533,15 @@ render (int active)
         format_game_time_c<4> (last_xdays_s, "days i.e. %md of %lm, %Y", track_start2);
         imgui.igText (last_xdays_s.c_str ());
 
-        track_start = since_day ? maptrack.since_dayx : track_start2;
-        track_end = maptrack.time_point * (last_recorded_time - track_start) + track_start;
+        auto tstart = since_day ? maptrack.since_dayx : track_start2;
+        auto tend = maptrack.time_point * (last_recorded_time - tstart) + tstart;
+        format_game_time_c<1> (track_start_s, "From day %ri, %md of %lm", tstart);
+        format_game_time_c<2> (track_end_s, "to day %ri, %md of %lm", tend);
+        bool tupdated = false;
+        std::tie (track_range.first, track_range.second)
+            = maptrack.track.time_range (tstart, tend, tupdated);
+        track_range.draw_invalidated |= tupdated;
+        track_range.length_invalidated |= tupdated;
 
         ImVec2 const button_size { dragday_size.x*3, 0 };
         imgui.igSeparator ();
@@ -544,7 +552,7 @@ render (int active)
         if (imgui.igButton ("Save As##track", button_size))
             show_track_saveas = !show_track_saveas;
         imgui.igSameLine (0, -1);
-        if (imgui.igButton ("Summary##track", button_size))
+        if (imgui.igButton ("Report##track", button_size))
             show_track_summary = !show_track_summary;
         if (imgui.igButton ("Load##track", button_size))
             show_track_load = !show_track_load;
@@ -568,6 +576,9 @@ render (int active)
         imgui.igSameLine (0, -1);
         if (imgui.igButton ("Save As##icons", button_size))
             show_icons_saveas = !show_icons_saveas;
+        imgui.igSameLine (0, -1);
+        if (imgui.igButton ("View atlas##icons", button_size))
+            show_icons_atlas = !show_icons_atlas;
         if (imgui.igButton ("Load##icons", button_size))
             show_icons_load = !show_icons_load;
         imgui.igSameLine (0, -1);
@@ -612,6 +623,9 @@ render (int active)
     void draw_icons_load ();
     if (show_icons_load)
         draw_icons_load ();
+    void draw_icons_atlas ();
+    if (show_icons_atlas)
+        draw_icons_atlas ();
 
     imgui.igPopFont ();
 }
@@ -704,7 +718,7 @@ draw_icons_saveas ()
         }
         if (imgui.igBeginPopup ("Overwrite file?", 0))
         {
-            if (imgui.igButton ("Confirm overwrite##file", ImVec2 {}))
+            if (imgui.igButton ("Confirm##file", ImVec2 {}))
                 if (save_icons (icons_directory + name + ".json"))
                     show_icons_saveas = false, imgui.igCloseCurrentPopup ();
             imgui.igEndPopup ();
@@ -736,7 +750,7 @@ draw_track_saveas ()
         }
         if (imgui.igBeginPopup ("Overwrite file?", 0))
         {
-            if (imgui.igButton ("Confirm overwrite##file", ImVec2 {}))
+            if (imgui.igButton ("Confirm##file", ImVec2 {}))
                 if (save_track (tracks_directory + name + ".bin"))
                     show_track_saveas = false, imgui.igCloseCurrentPopup ();
             imgui.igEndPopup ();
@@ -831,7 +845,7 @@ draw_track_load ()
 
 static float
 trackpoint_height (void* data, int idx) {
-    return std::next (*reinterpret_cast<track_t::const_iterator*> (data), idx)->w;
+    return std::next (*reinterpret_cast<track_t::const_iterator*> (data), idx)->z;
 }
 
 void
@@ -839,24 +853,88 @@ draw_track_summary ()
 {
     if (imgui.igBegin ("SSE MapTrack: Track summary", &show_track_summary, 0))
     {
-        auto t = maptrack.track.time_range (track_start, track_end);
-        imgui.igPlotLinesFnPtr ("Altitude histogram", trackpoint_height, &t.first,
-                int (std::distance (t.first, t.second)), 0, nullptr, 0, 0, ImVec2 {});
-
-        auto bb = maptrack.track.bounding_box ();
-        imgui.igText ("Bounding box (min): %6d %6d %6d",
-                int (bb.first.x), int (bb.first.y), int (bb.first.z));
-        imgui.igText ("Bounding box (max): %6d %6d %6d",
-                int (bb.second.x), int (bb.second.y), int (bb.second.z));
-
-        static float len = 0;
-        static float old_t0 = -1, old_t1 = -1;
-        if (track_start != old_t0 || track_end != old_t1)
+        static double len = 0;
+        if (track_range.length_invalidated)
         {
-            old_t0 = track_start, old_t1 = track_end;
-            len = track_t::compute_length (t.first, t.second);
+            track_range.length_invalidated = false;
+            len = track_t::compute_length (track_range.first, track_range.second);
         }
         imgui.igText ("Length: %.0f", len);
+
+        auto bb = maptrack.track.bounding_box ();
+        imgui.igText ("Bounding box min: %6.0f %6.0f %6.0f", bb.first.x, bb.first.y, bb.first.z);
+        imgui.igText ("Bounding box max: %6.0f %6.0f %6.0f", bb.second.x, bb.second.y, bb.second.z);
+
+        const char* name = "Altitude histogram";
+        auto avail_sz = imgui.igGetContentRegionAvail ();
+        avail_sz.x -= imgui.igCalcTextSize (name, nullptr, false, -1.f).x;
+        imgui.igPlotLinesFnPtr (name, trackpoint_height, &track_range.first,
+                int (std::distance (track_range.first, track_range.second)), 0, nullptr,
+                bb.first.z, bb.second.z, avail_sz);
+    }
+    imgui.igEnd ();
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void
+draw_icons_atlas ()
+{
+    if (imgui.igBegin ("SSE MapTrack: Icon atlas", &show_icons_atlas, 0))
+    {
+        constexpr int icons_size = 16;
+        static glm::vec2 uvtl {0},
+                         uvbr {std::min (1.f, maptrack.icon_atlas.icon_uvsize * icons_size)};
+        static glm::vec2 last_mouse_pos = {-1,-1};
+        static bool hovered = false;
+        static std::string index;
+
+        imgui.igText ("Icon index: %s", index.c_str ());
+        auto wsz = to_vec2 (imgui.igGetContentRegionAvail ());
+        auto wpos = to_vec2 (imgui.igGetWindowPos ()) + to_vec2 (imgui.igGetCursorPos ());
+
+        ImGuiIO* io = imgui.igGetIO ();
+        glm::vec2 backup_uvtl = uvtl, backup_uvbr = uvbr;
+
+        if (hovered)
+        {
+            auto mouse_pos = to_vec2 (io->MousePos);
+            if (io->MouseDown[0])
+            {
+                if (last_mouse_pos.x == -1)
+                    last_mouse_pos = mouse_pos;
+                auto d = (uvbr - uvtl) * (mouse_pos - last_mouse_pos) / wsz;
+                uvtl -= d;
+                uvbr -= d;
+                last_mouse_pos = mouse_pos;
+            }
+            else last_mouse_pos.x = -1;
+
+            glm::ivec2 ndx {
+                uvtl / maptrack.icon_atlas.icon_uvsize
+                + float (icons_size) * (mouse_pos - wpos) / wsz };
+            int i = ndx.x + ndx.y * (maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size);
+            if (i < 0 || i >= int (maptrack.icon_atlas.icon_count))
+                index.clear ();
+            else index = std::to_string (i+1);
+        }
+        else last_mouse_pos.x = -1;
+
+        if (hovered && io->MouseDown[0])
+        {
+            uvtl = glm::clamp (glm::vec2 (0), uvtl, glm::vec2 (1));
+            uvbr = glm::clamp (glm::vec2 (0), uvbr, glm::vec2 (1));
+            if (uvbr.x - uvtl.x != backup_uvbr.x - backup_uvtl.x)
+                uvbr.x = backup_uvbr.x, uvtl.x = backup_uvtl.x;
+            if (uvbr.y - uvtl.y != backup_uvbr.y - backup_uvtl.y)
+                uvbr.y = backup_uvbr.y, uvtl.y = backup_uvtl.y;
+        }
+
+        imgui.igInvisibleButton ("Icon atlas", to_ImVec2 (wsz));
+        imgui.ImDrawList_AddImage (imgui.igGetWindowDrawList (), maptrack.icon_atlas.ref,
+                to_ImVec2 (wpos), to_ImVec2 (wpos + wsz),
+                to_ImVec2 (uvtl), to_ImVec2 (uvbr), IM_COL32_WHITE);
+        hovered = imgui.igIsItemHovered (0);
     }
     imgui.igEnd ();
 }
