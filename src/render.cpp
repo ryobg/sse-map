@@ -95,7 +95,7 @@ public:
 static VOID CALLBACK
 timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
 {
-    if (!maptrack.enabled)
+    if (!maptrack.enabled && !maptrack.player.enabled)
         return;
 
     auto curr_world = obtain_current_worldspace ();
@@ -124,7 +124,8 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
     }
     player_location = glm::vec4 { curr_loc[0], curr_loc[1], curr_loc[2], curr_time };
 
-    maptrack.track.add_point (player_location);
+    if (maptrack.enabled)
+        maptrack.track.add_point (player_location);
 }
 
 //--------------------------------------------------------------------------------------------------
