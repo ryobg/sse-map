@@ -133,7 +133,6 @@ load_icons (std::string const& filename)
 
         std::vector<icon_t> icons;
         icons.reserve (json.at ("icons").size ());
-        const auto stride = maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size;
 
         for (auto const& jico: json["icons"])
         {
@@ -144,7 +143,8 @@ load_icons (std::string const& filename)
             i.tl.x = *it++; i.tl.y = *it++;
             i.br.x = *it++; i.br.y = *it;
             i.index = jico.at ("index");
-            i.src = maptrack.icon_atlas.icon_uvsize * glm::vec2 {i.index%stride, i.index/stride};
+            i.src = maptrack.icon_atlas.icon_uvsize * glm::vec2 {
+                i.index % maptrack.icon_atlas.stride, i.index / maptrack.icon_atlas.stride };
             icons.push_back (i);
         }
 
@@ -201,6 +201,11 @@ save_settings ()
                 { "since dayx", maptrack.since_dayx },
                 { "last xdays", maptrack.last_xdays },
                 { "time point", maptrack.time_point }
+            }},
+            { "player", {
+                { "enabled", maptrack.player.enabled },
+                { "color", hex_string (maptrack.player.color) },
+                { "size", maptrack.player.size }
             }},
             { "update period", maptrack.update_period },
             { "min distance", maptrack.min_distance },
@@ -308,8 +313,19 @@ load_settings ()
         maptrack.update_period = json.value ("update period", 5.f);
         maptrack.min_distance = json.value ("min distance", 10.f); //1:205 map scale by 5x zoom
         maptrack.track_width = json.value ("track width", 3.f);
-        maptrack.track_color = std::stoull (json.value ("track color", "0xFF400000"), nullptr, 0);
+        maptrack.track_color = std::stoul (json.value ("track color", "0xFF400000"), nullptr, 0);
         maptrack.track.merge_distance (maptrack.min_distance);
+
+        maptrack.player.enabled = true;
+        maptrack.player.color = 0xFF400000;
+        maptrack.player.size = 6.f;
+        if (json.contains ("player"))
+        {
+            auto const& jp = json.at ("player");
+            maptrack.player.enabled = jp.at ("enabled");
+            maptrack.player.color = std::stoul (jp.at ("color").get<std::string> (), nullptr, 0);
+            maptrack.player.size = jp.at ("size");
+        }
 
         auto& icon_atlas = maptrack.icon_atlas;
         icon_atlas.file = maptrack_directory + "icons.dds";
@@ -326,6 +342,7 @@ load_settings ()
             throw std::runtime_error ("Bad icons DDS file.");
         icon_atlas.size = texture_size (icon_atlas.ref).x;
         icon_atlas.icon_uvsize = float (icon_atlas.icon_size) / icon_atlas.size;
+        icon_atlas.stride = maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size;
 
         maptrack.map = image_t {};
         maptrack.map.uv = { 0, 0, 1, .711f };

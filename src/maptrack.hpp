@@ -47,6 +47,7 @@
 #include <glm/gtx/range.hpp>
 #include <glm/gtx/norm.hpp>
 #include <glm/gtx/io.hpp>
+#include <glm/gtx/compatibility.hpp>
 
 #include <array>
 #include <vector>
@@ -95,10 +96,10 @@ extern std::string default_icons_file;
 
 bool setup_variables ();
 
-float game_time ();
-std::array<float, 3> player_location ();
-std::string current_worldspace ();
-std::string current_cell ();
+float obtain_game_time ();
+std::array<float, 3> obtain_player_location ();
+std::string obtain_current_worldspace ();
+std::string obtain_current_cell ();
 
 void format_game_time (std::string&, const char*, float);
 void format_player_location (std::string&, const char*, std::array<float, 3> const&);
@@ -132,8 +133,9 @@ struct icon_atlas_t
     std::string file;
     ID3D11ShaderResourceView* ref;
     std::uint32_t size;       ///< Computed size of #ref (one as the texture is a square)
-    float icon_uvsize;        ///< Computed size #icon_size upon the texture #ref
-    std::uint32_t icon_size;  ///< Sides size of each icon (0..1] on #ref
+    std::uint32_t stride;     ///< Computed number of icons per row of icons (upon #ref)
+    float icon_uvsize;        ///< Computed size of #icon_size (0..1] upon the texture #ref
+    std::uint32_t icon_size;  ///< Sides size of each icon in pixels (e.g. 16, 32, 64)
     std::uint32_t icon_count; ///< Number of icons in loaded texture.
 };
 
@@ -182,6 +184,12 @@ struct maptrack_t
 
     float track_width;
     std::uint32_t track_color;
+
+    struct {
+        bool enabled;
+        float size;
+        std::uint32_t color;
+    } player;
 
     /// Heavy scenario: 60 seconds by 60 minutes by 150 game hours = 540k elements
     track_t track;

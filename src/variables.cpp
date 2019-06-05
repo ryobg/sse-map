@@ -133,7 +133,7 @@ replace_all (std::string& data, std::string const& search, std::string const& re
 //--------------------------------------------------------------------------------------------------
 
 std::array<float, 3>
-player_location ()
+obtain_player_location ()
 {
     constexpr float nan = std::numeric_limits<float>::quiet_NaN ();
     float* pos = player_pos.obtain ();
@@ -171,7 +171,7 @@ format_player_location (std::string& out, const char* format, std::array<float, 
 //--------------------------------------------------------------------------------------------------
 
 std::string
-current_worldspace ()
+obtain_current_worldspace ()
 {
     if (auto name = worldspace_name.obtain ())
         return name;
@@ -181,7 +181,7 @@ current_worldspace ()
 //--------------------------------------------------------------------------------------------------
 
 std::string
-current_cell ()
+obtain_current_cell ()
 {
     if (auto name = player_cell.obtain ())
         return name;
@@ -191,7 +191,7 @@ current_cell ()
 //--------------------------------------------------------------------------------------------------
 
 float
-game_time ()
+obtain_game_time ()
 {
     float* source = game_epoch.obtain ();
     if (!source || !std::isnormal (*source) || *source < 0)

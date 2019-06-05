@@ -49,6 +49,7 @@ static HWND top_window = nullptr;
 
 /// Shared strings for rendering
 static std::string current_location, current_time;
+static glm::vec4 player_location { std::numeric_limits<float>::quiet_NaN () };
 
 /// Current subrange of #maptrack.track selected for rendering, GUI controlled.
 static struct {
@@ -62,6 +63,33 @@ static bool icons_invalidated = false;
 
 //--------------------------------------------------------------------------------------------------
 
+/// State based, projection of point in game or UV map coordinates into screen space
+/// Better differentation between the both functionalities would be nice.
+
+class map_project
+{
+    glm::vec2 wpos, uvtl, uvbr, mul;
+public:
+    map_project (glm::vec2 const& wpos, glm::vec2 const& wsz,
+                 glm::vec2 const& uvtl, glm::vec2 const& uvbr)
+        : wpos (wpos), uvtl (uvtl), uvbr (uvbr), mul (wsz / (uvbr - uvtl))
+    {
+    }
+    /// Project a game point to a screen point
+    glm::vec2 operator () (glm::vec4 const& p) const
+    {
+        return this->operator () (maptrack.offset + glm::vec2 { p.x * maptrack.scale.x,
+                                                               -p.y * maptrack.scale.y });
+    }
+    /// Project a map point to a screen point
+    inline glm::vec2 operator () (glm::vec2 const& p) const
+    {
+        return wpos + mul * (p - uvtl);
+    }
+};
+
+//--------------------------------------------------------------------------------------------------
+
 /// Basically adds meaningful points
 
 static VOID CALLBACK
@@ -70,10 +98,10 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
     if (!maptrack.enabled)
         return;
 
-    auto curr_world = current_worldspace ();
-    auto curr_cell = current_cell ();
-    auto curr_loc = player_location ();
-    auto curr_time = game_time ();
+    auto curr_world = obtain_current_worldspace ();
+    auto curr_cell  = obtain_current_cell ();
+    auto curr_loc   = obtain_player_location ();
+    auto curr_time  = obtain_game_time ();
 
     // Use the time to reduce the stress of printf-like formatting in the rendering loop below
     // Though with the cache implementation, it may not make sense anymore... In any case, some
@@ -90,9 +118,13 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
     format_game_time (current_time, "Day %ri, %md of %lm, %Y [%h:%m]", curr_time);
 
     if (curr_world != "Skyrim" || !curr_cell.empty ())
+    {
+        player_location = glm::vec4 { std::numeric_limits<float>::quiet_NaN () };
         return;
+    }
+    player_location = glm::vec4 { curr_loc[0], curr_loc[1], curr_loc[2], curr_time };
 
-    maptrack.track.add_point (glm::vec4 { curr_loc[0], curr_loc[1], curr_loc[2], curr_time });
+    maptrack.track.add_point (player_location);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -132,6 +164,27 @@ setup ()
 //--------------------------------------------------------------------------------------------------
 
 static void
+draw_player (glm::vec2 const& wpos, glm::vec2 const& wsz,
+            glm::vec2 const& uvtl, glm::vec2 const& uvbr)
+{
+    if (!maptrack.player.enabled
+            || glm::isfinite (player_location) != glm::bvec4 (true))
+        return;
+
+    imgui.ImDrawList_PushClipRect (imgui.igGetWindowDrawList (),
+            to_ImVec2 (wpos), to_ImVec2 (wpos+wsz), false);
+
+    map_project proj (wpos, wsz, uvtl, uvbr);
+    imgui.ImDrawList_AddCircleFilled (imgui.igGetWindowDrawList (),
+            to_ImVec2 (proj (player_location)),
+            maptrack.player.size * .5f, maptrack.player.color, 12);
+
+    imgui.ImDrawList_PopClipRect (imgui.igGetWindowDrawList ());
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static void
 draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
             glm::vec2 const& uvtl, glm::vec2 const& uvbr,
             bool hovered)
@@ -147,12 +200,12 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
     } cached;
     static decltype (maptrack.icons)::iterator ico = maptrack.icons.end ();
 
-    auto const mult = wsz / (uvbr - uvtl);
+    map_project const mproj (wpos, wsz, uvtl, uvbr);
     auto make_image = [&] (icon_t const& ico, std::uint32_t index)
     {
         return icon_image {
-            to_ImVec2 (wpos + mult * (ico.tl - uvtl)),
-            to_ImVec2 (wpos + mult * (ico.br - uvtl)),
+            to_ImVec2 (mproj (ico.tl)),
+            to_ImVec2 (mproj (ico.br)),
             to_ImVec2 (ico.src), ico.tint, index
         };
     };
@@ -214,7 +267,7 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
     // Clicking on existing icon, sets it for modification. Otherwise, create new one by copying
     // the last one selected (if any) - this is for rapid multiplication across the map.
 
-    constexpr int max_text = 20; // Likely SSO
+    constexpr int max_text = 63;
 
     ImGuiIO* io = imgui.igGetIO ();
     if (hovered && io->MouseDown[1])
@@ -260,7 +313,6 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
     if (imgui.igBeginPopup ("Setup icon", 0))
     {
         static const std::string name = "out of " + std::to_string (maptrack.icon_atlas.icon_count);
-        static const auto stride = maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size;
 
         imgui.igInputText ("Small text##icon", &ico->text[0], max_text, 0, nullptr, nullptr);
 
@@ -269,8 +321,9 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
         {
             cached.ico_updated = true;
             ico->index = glm::clamp (1, user_index, int (maptrack.icon_atlas.icon_count)) - 1;
-            ico->src = maptrack.icon_atlas.icon_uvsize
-                * glm::vec2 { ico->index % stride, ico->index / stride };
+            ico->src = maptrack.icon_atlas.icon_uvsize * glm::vec2 {
+                ico->index % maptrack.icon_atlas.stride,
+                ico->index / maptrack.icon_atlas.stride };
         }
 
         constexpr int colflags = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayHSV
@@ -354,15 +407,10 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
     // if the player is not on auto-move.
     else if (window_resized || track_range.draw_invalidated)
     {
-        auto mul = wsz / (uvbr - uvtl);
         cached.uvtrack.resize (std::distance (track_range.first, track_range.second));
-
-        auto transf = [&] (glm::vec4 const& t)
-        {
-            auto p = maptrack.offset + glm::vec2 {t.x * maptrack.scale.x, -t.y * maptrack.scale.y};
-            return wpos + mul * (p - uvtl);
-        };
-        std::transform (track_range.first, track_range.second, cached.uvtrack.begin (), transf);
+        std::transform (
+                track_range.first, track_range.second, cached.uvtrack.begin (),
+                map_project (wpos, wsz, uvtl, uvbr));
     }
 
     imgui.ImDrawList_PushClipRect (imgui.igGetWindowDrawList (),
@@ -452,8 +500,9 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
         mouse_wheel = io->MouseWheel ? (io->MouseWheel > 0 ? +1 : -1) : 0;
     }
 
-    draw_icons (wpos + map_pos, map_size, uvtl, uvbr, hovered);
-    draw_track (wpos + map_pos, map_size, uvtl, uvbr);
+    draw_icons  (wpos + map_pos, map_size, uvtl, uvbr, hovered);
+    draw_track  (wpos + map_pos, map_size, uvtl, uvbr);
+    draw_player (wpos + map_pos, map_size, uvtl, uvbr);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -652,6 +701,12 @@ draw_settings ()
         if (imgui.igColorEdit4 ("Color##Track", (float*) &col, cflags))
             maptrack.track_color = imgui.igGetColorU32Vec4 (col);
         imgui.igSliderFloat ("Width##Track", &maptrack.track_width, 1.f, 20.f, "%.1f", 1);
+
+        imgui.igCheckbox ("Player circle", &maptrack.player.enabled);
+        col = imgui.igColorConvertU32ToFloat4 (maptrack.player.color);
+        if (imgui.igColorEdit4 ("Color##Player", (float*) &col, cflags))
+            maptrack.player.color = imgui.igGetColorU32Vec4 (col);
+        imgui.igSliderFloat ("Size##Player", &maptrack.player.size, 1.f, 20.f, "%.1f", 1);
 
         imgui.igText ("");
         if (imgui.igButton ("Save settings", ImVec2 {}))
@@ -882,9 +937,9 @@ draw_icons_atlas ()
 {
     if (imgui.igBegin ("SSE MapTrack: Icon atlas", &show_icons_atlas, 0))
     {
-        constexpr int icons_size = 16;
-        static glm::vec2 uvtl {0},
-                         uvbr {std::min (1.f, maptrack.icon_atlas.icon_uvsize * icons_size)};
+        const auto icons_size = std::min (maptrack.icon_atlas.stride, 16u);
+        static glm::vec2 uvtl { 0 },
+                         uvbr { maptrack.icon_atlas.icon_uvsize * icons_size };
         static glm::vec2 last_mouse_pos = {-1,-1};
         static bool hovered = false;
         static std::string index;
@@ -913,7 +968,7 @@ draw_icons_atlas ()
             glm::ivec2 ndx {
                 uvtl / maptrack.icon_atlas.icon_uvsize
                 + float (icons_size) * (mouse_pos - wpos) / wsz };
-            int i = ndx.x + ndx.y * (maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size);
+            int i = ndx.x + ndx.y * maptrack.icon_atlas.stride;
             if (i < 0 || i >= int (maptrack.icon_atlas.icon_count))
                 index.clear ();
             else index = std::to_string (i+1);
