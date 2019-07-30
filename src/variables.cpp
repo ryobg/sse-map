@@ -75,7 +75,8 @@ struct relocation
  * other values, depending on the situation. At start of the game, the pointer reference is null,
  * hence no way to obtain the value.
  *
- * The game starts at Morndas, the 17th of Last Seed, 4E201, near 09:30.
+ * The game starts at Sundas, the 17th of Last Seed, 4E201, near 09:30. At that time the value is
+ * something like 0.45 or so
  *
  * Found five consecitive pointers with offsets which seems to reside somewhere in the Papyrus
  * virtual machine object (0x1ec3b78) according to SKSE. Weirdly, it is inside the eventSink array
@@ -225,16 +226,16 @@ format_game_time (std::string& out, const char* format, float source)
     hms  -= int (hms);
     int s = int (hms * 60);
 
-    // Adjusts for starting date: Mon 17 Jul 201
-    int d = int (source);
-    int y = d / 366 + 201;
-    int yd = d % 366 + 229;
-    int wd = (d+1) % 7;
+    // Adjusts for starting date: Sun, 17 Jul 201 (considering that the year starts Wed)
+    int d = int (*source) + 228;
+    int y = d / 365 + 201;
+    int yd = d % 365 + 1;
+    int wd = (d+3) % 7;
 
     std::array<int, 12> months = { 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365 };
     auto mit = std::lower_bound (months.cbegin (), months.cend (), yd);
     int mo = mit - months.cbegin ();
-    int md = (mo ? yd-*(mit-1) : 1+yd);
+    int md = (mo ? yd-*(mit-1) : yd);
 
     // Replace years
     auto sy = std::to_string (y);
