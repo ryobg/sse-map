@@ -76,15 +76,19 @@ public:
     {
     }
     /// Project a game point to a screen point
-    glm::vec2 operator () (glm::vec4 const& p) const
+    inline glm::vec2 operator () (glm::vec4 const& p) const
     {
-        return this->operator () (maptrack.offset + glm::vec2 { p.x * maptrack.scale.x,
-                                                               -p.y * maptrack.scale.y });
+        return this->operator () (game_to_map (p));
     }
     /// Project a map point to a screen point
     inline glm::vec2 operator () (glm::vec2 const& p) const
     {
         return wpos + mul * (p - uvtl);
+    }
+    /// Project a game point to a map point
+    inline glm::vec2 game_to_map (glm::vec4 const& p) const
+    {
+        return maptrack.offset + glm::vec2 { p.x * maptrack.scale.x, -p.y * maptrack.scale.y };
     }
 };
 
@@ -430,6 +434,89 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
 
 //--------------------------------------------------------------------------------------------------
 
+static void
+draw_fog (glm::vec2 const& wpos, glm::vec2 const& wsz,
+          glm::vec2 const& uvtl, glm::vec2 const& uvbr)
+{
+    glm::ivec2 fow_resolution (96, 96);
+    char player_alpha = 0, default_alpha = 255, tracked_alpha = 128;
+    int discover_radius = 3;
+    if (track_range.first == track_range.second)
+        return;
+
+    glm::vec2 const step = 1.f / glm::vec2 (fow_resolution);
+    map_project const proj (wpos, wsz, uvtl, uvbr);
+
+    static std::vector<char> cells;
+    cells.resize (fow_resolution.x * fow_resolution.y);
+
+    // Update the fog of war cells, reduces comparision time with the tracks down the rendering
+    if (track_range.draw_invalidated)
+    {
+        auto update_cells = [&] (int x, int y, char alpha)
+        {
+            float r2 = discover_radius * discover_radius;
+            for (int dy = -discover_radius; dy <= +discover_radius; ++dy)
+                for (int dx = -discover_radius; dx <= +discover_radius; ++dx)
+                {
+                    if (x+dx >= 0 && x+dx < fow_resolution.x
+                     && y+dy >= 0 && y+dy < fow_resolution.y)
+                    {
+                        if (glm::distance2 (glm::vec2 (x+dx, y+dy), glm::vec2 (x, y)) < r2)
+                            cells[x+dx + (y+dy) * fow_resolution.x] = alpha;
+                    }
+                }
+        };
+
+        std::fill (cells.begin (), cells.end (), default_alpha);
+
+        for (auto it = track_range.first; it != track_range.second; ++it)
+        {
+            glm::ivec2 cell (proj.game_to_map (*it) / step);
+            update_cells (cell.x, cell.y, tracked_alpha);
+        }
+
+        glm::ivec2 cell (proj.game_to_map (player_location) / step);
+        update_cells (cell.x, cell.y, player_alpha);
+    }
+
+    // Render
+
+    auto wdl = imgui.igGetWindowDrawList ();
+    imgui.ImDrawList_PushClipRect (wdl, to_ImVec2 (wpos), to_ImVec2 (wpos + wsz), false);
+    auto old_flags = std::exchange (wdl->Flags, ImDrawListFlags_None);
+
+    glm::ivec2 const ctl (glm::floor (uvtl / step));
+    glm::vec2 const tl = glm::vec2 (ctl) * step;
+    glm::vec2 const br = glm::vec2 (glm::ceil (uvbr / step)) * step;
+
+    glm::ivec2 cell = ctl;
+    for (float y = tl.y; y < br.y; y += step.y, ++cell.y)
+    {
+        cell.x = ctl.x;
+        for (float x = tl.x; x < br.x; x += step.x, ++cell.x)
+        {
+            char alpha = 255;
+            if (cell.x >= 0 && cell.x < fow_resolution.x
+             && cell.y >= 0 && cell.y < fow_resolution.y)
+            {
+                alpha = cells[cell.x + cell.y * fow_resolution.x];
+            }
+            imgui.ImDrawList_AddQuadFilled (wdl,
+                    to_ImVec2 (proj (glm::vec2 (x       , y    ))),
+                    to_ImVec2 (proj (glm::vec2 (x+step.x, y    ))),
+                    to_ImVec2 (proj (glm::vec2 (x+step.x, y+step.y))),
+                    to_ImVec2 (proj (glm::vec2 (x       , y+step.y))),
+                    IM_COL32 (0, 0, 0, alpha));
+        }
+    }
+
+    wdl->Flags = old_flags;
+    imgui.ImDrawList_PopClipRect (wdl);
+}
+
+//--------------------------------------------------------------------------------------------------
+
 /// Handles mostly map zoom and dragging but also and the actual drawing of course
 
 static void
@@ -504,6 +591,7 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
         mouse_wheel = io->MouseWheel ? (io->MouseWheel > 0 ? +1 : -1) : 0;
     }
 
+    draw_fog    (wpos + map_pos, map_size, uvtl, uvbr);
     draw_icons  (wpos + map_pos, map_size, uvtl, uvbr, hovered);
     draw_track  (wpos + map_pos, map_size, uvtl, uvbr);
     draw_player (wpos + map_pos, map_size, uvtl, uvbr);
