@@ -182,6 +182,7 @@ struct maptrack_t
     float update_period;    ///< In seconds, how frequently to poll for data
     float min_distance;     ///< Minimum distance between points, to register a new one
 
+    bool track_enabled = true;
     float track_width;
     std::uint32_t track_color;
 
@@ -190,6 +191,13 @@ struct maptrack_t
         float size;
         std::uint32_t color;
     } player;
+
+    struct {
+        bool enabled;
+        int resolution;
+        int discover;
+        float player_alpha, default_alpha, tracked_alpha;
+    } fow;                  ///< Fog of War
 
     /// Heavy scenario: 60 seconds by 60 minutes by 150 game hours = 540k elements
     track_t track;

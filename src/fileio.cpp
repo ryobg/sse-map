@@ -207,8 +207,16 @@ save_settings ()
                 { "color", hex_string (maptrack.player.color) },
                 { "size", maptrack.player.size }
             }},
+            { "Fog of War", {
+                { "enabled", maptrack.fow.enabled },
+                { "resolution", maptrack.fow.resolution },
+                { "discover", maptrack.fow.discover },
+                { "default alpha", maptrack.fow.default_alpha },
+                { "tracked alpha", maptrack.fow.tracked_alpha },
+            }},
             { "update period", maptrack.update_period },
             { "min distance", maptrack.min_distance },
+            { "track enabled", maptrack.track_enabled },
             { "track width", maptrack.track_width },
             { "track color", hex_string (maptrack.track_color) },
             { "icon atlas", {
@@ -312,6 +320,7 @@ load_settings ()
 
         maptrack.update_period = json.value ("update period", 5.f);
         maptrack.min_distance = json.value ("min distance", 10.f); //1:205 map scale by 5x zoom
+        maptrack.track_enabled = json.value ("track enabled", true);
         maptrack.track_width = json.value ("track width", 3.f);
         maptrack.track_color = std::stoul (json.value ("track color", "0xFF400000"), nullptr, 0);
         maptrack.track.merge_distance (maptrack.min_distance);
@@ -325,6 +334,22 @@ load_settings ()
             maptrack.player.enabled = jp.at ("enabled");
             maptrack.player.color = std::stoul (jp.at ("color").get<std::string> (), nullptr, 0);
             maptrack.player.size = jp.at ("size");
+        }
+
+        maptrack.fow.enabled = true;
+        maptrack.fow.resolution = 96;
+        maptrack.fow.discover   = 3;
+        maptrack.fow.player_alpha = 0.f;
+        maptrack.fow.default_alpha = 1.f;
+        maptrack.fow.tracked_alpha = .5f;
+        if (json.contains ("Fog of War"))
+        {
+            auto const& j = json.at ("Fog of War");
+            maptrack.fow.enabled = j.value ("enabled", maptrack.fow.enabled);
+            maptrack.fow.resolution = j.value ("resolution", maptrack.fow.resolution);
+            maptrack.fow.discover = j.value ("discover", maptrack.fow.discover);
+            maptrack.fow.default_alpha = j.value ("default alpha", maptrack.fow.default_alpha);
+            maptrack.fow.tracked_alpha = j.value ("tracked alpha", maptrack.fow.tracked_alpha);
         }
 
         auto& icon_atlas = maptrack.icon_atlas;

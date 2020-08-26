@@ -396,7 +396,7 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
     }
     cached;
 
-    if (track_range.first == track_range.second)
+    if (!maptrack.track_enabled || track_range.first == track_range.second)
         return;
 
     bool window_moved = (cached.wpos != wpos);
@@ -438,35 +438,44 @@ static void
 draw_fog (glm::vec2 const& wpos, glm::vec2 const& wsz,
           glm::vec2 const& uvtl, glm::vec2 const& uvbr)
 {
-    glm::ivec2 fow_resolution (96, 96);
-    char player_alpha = 0, default_alpha = 255, tracked_alpha = 128;
-    int discover_radius = 3;
-    if (track_range.first == track_range.second)
+    if (!maptrack.fow.enabled || track_range.first == track_range.second)
         return;
 
-    glm::vec2 const step = 1.f / glm::vec2 (fow_resolution);
+    static decltype (maptrack.fow) cached = maptrack.fow;
+    bool const fow_invalidated =
+               cached.resolution != maptrack.fow.resolution
+            || cached.discover != maptrack.fow.discover
+            || cached.default_alpha != maptrack.fow.default_alpha
+            || cached.tracked_alpha != maptrack.fow.tracked_alpha;
+    cached = maptrack.fow;
+
+    glm::vec2 const step = 1.f / glm::vec2 (maptrack.fow.resolution, maptrack.fow.resolution);
     map_project const proj (wpos, wsz, uvtl, uvbr);
 
     static std::vector<char> cells;
-    cells.resize (fow_resolution.x * fow_resolution.y);
+    cells.resize (maptrack.fow.resolution * maptrack.fow.resolution);
 
     // Update the fog of war cells, reduces comparision time with the tracks down the rendering
-    if (track_range.draw_invalidated)
+    if (fow_invalidated || track_range.draw_invalidated)
     {
         auto update_cells = [&] (int x, int y, char alpha)
         {
-            float r2 = discover_radius * discover_radius;
-            for (int dy = -discover_radius; dy <= +discover_radius; ++dy)
-                for (int dx = -discover_radius; dx <= +discover_radius; ++dx)
+            float r2 = maptrack.fow.discover * maptrack.fow.discover;
+            for (int dy = -maptrack.fow.discover; dy <= +maptrack.fow.discover; ++dy)
+                for (int dx = -maptrack.fow.discover; dx <= +maptrack.fow.discover; ++dx)
                 {
-                    if (x+dx >= 0 && x+dx < fow_resolution.x
-                     && y+dy >= 0 && y+dy < fow_resolution.y)
+                    if (x+dx >= 0 && x+dx < maptrack.fow.resolution
+                     && y+dy >= 0 && y+dy < maptrack.fow.resolution)
                     {
                         if (glm::distance2 (glm::vec2 (x+dx, y+dy), glm::vec2 (x, y)) < r2)
-                            cells[x+dx + (y+dy) * fow_resolution.x] = alpha;
+                            cells[x+dx + (y+dy) * maptrack.fow.resolution] = alpha;
                     }
                 }
         };
+
+        char default_alpha = char (glm::clamp (maptrack.fow.default_alpha * 255, 0.f, 255.f));
+        char tracked_alpha = char (glm::clamp (maptrack.fow.tracked_alpha * 255, 0.f, 255.f));
+        char player_alpha = char (glm::clamp (maptrack.fow.player_alpha * 255, 0.f, 255.f));
 
         std::fill (cells.begin (), cells.end (), default_alpha);
 
@@ -497,10 +506,10 @@ draw_fog (glm::vec2 const& wpos, glm::vec2 const& wsz,
         for (float x = tl.x; x < br.x; x += step.x, ++cell.x)
         {
             char alpha = 255;
-            if (cell.x >= 0 && cell.x < fow_resolution.x
-             && cell.y >= 0 && cell.y < fow_resolution.y)
+            if (cell.x >= 0 && cell.x < maptrack.fow.resolution
+             && cell.y >= 0 && cell.y < maptrack.fow.resolution)
             {
-                alpha = cells[cell.x + cell.y * fow_resolution.x];
+                alpha = cells[cell.x + cell.y * maptrack.fow.resolution];
             }
             imgui.ImDrawList_AddQuadFilled (wdl,
                     to_ImVec2 (proj (glm::vec2 (x       , y    ))),
@@ -636,6 +645,8 @@ render (int active)
 
         imgui.igSeparator ();
         imgui.igCheckbox ("Tracking enabled", &maptrack.enabled);
+        imgui.igCheckbox ("Fog of War", &maptrack.fow.enabled);
+        imgui.igCheckbox ("Trail", &maptrack.track_enabled);
         imgui.igSetNextItemWidth (dragday_size.x*2);
         if (imgui.igDragFloat ("seconds between updates",
                     &maptrack.update_period, .1f, 1.f, 60.f, "%.1f", 1))
@@ -799,6 +810,12 @@ draw_settings ()
         if (imgui.igColorEdit4 ("Color##Player", (float*) &col, cflags))
             maptrack.player.color = imgui.igGetColorU32Vec4 (col);
         imgui.igSliderFloat ("Size##Player", &maptrack.player.size, 1.f, 20.f, "%.1f", 1);
+
+        imgui.igText ("Fog of War");
+        imgui.igSliderInt ("Resolution##FoW", &maptrack.fow.resolution, 32, 256, "%d");
+        imgui.igSliderInt ("Discover radius##FoW", &maptrack.fow.discover, 1, 8, "%d");
+        imgui.igSliderFloat ("Default alpha##FoW", &maptrack.fow.default_alpha, 0, 1, "%.2f", 1);
+        imgui.igSliderFloat ("Tracked alpha##FoW", &maptrack.fow.tracked_alpha, 0, 1, "%.2f", 1);
 
         imgui.igText ("");
         if (imgui.igButton ("Save settings", ImVec2 {}))
