@@ -234,7 +234,10 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
     {
         auto d = wpos - cached.wpos;
         for (auto& i: cached.drawlist)
+        {
             i.tl.x += d.x, i.tl.y += d.y;
+            i.br.x += d.x, i.br.y += d.y;
+        }
     }
     else if (cached.ico_updated)
     {
