@@ -427,8 +427,17 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
 
     imgui.ImDrawList_PushClipRect (imgui.igGetWindowDrawList (),
             to_ImVec2 (wpos), to_ImVec2 (wpos+wsz), false);
+
+    int splits = 10000;
+    auto div = std::div (int (cached.uvtrack.size ()), splits);
+    for (int i = 0; i < div.quot; ++i)
+    {
+        imgui.ImDrawList_AddPolyline (imgui.igGetWindowDrawList (),
+                reinterpret_cast<ImVec2 const*> (cached.uvtrack.data () + i*splits), splits,
+                maptrack.track_color, false, maptrack.track_width);
+    }
     imgui.ImDrawList_AddPolyline (imgui.igGetWindowDrawList (),
-            reinterpret_cast<ImVec2 const*> (cached.uvtrack.data ()), int (cached.uvtrack.size ()),
+            reinterpret_cast<ImVec2 const*> (cached.uvtrack.data () + div.quot*splits), div.rem,
             maptrack.track_color, false, maptrack.track_width);
     imgui.ImDrawList_PopClipRect (imgui.igGetWindowDrawList ());
 
