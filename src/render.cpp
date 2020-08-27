@@ -45,6 +45,9 @@ static bool show_settings = false,
             show_icons_load = false,
             show_icons_atlas = false;
 
+/// Sets a Radio button below, should move to a persistent storate setting.
+static bool menu_since_day = true;
+
 /// Current HWND, used for timer management
 static HWND top_window = nullptr;
 
@@ -609,6 +612,23 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
 
 //--------------------------------------------------------------------------------------------------
 
+static void
+update_track_range ()
+{
+    float last_recorded_time = maptrack.track.last_time ();
+    auto track_start2 = std::max (0.f, last_recorded_time - maptrack.last_xdays);
+    auto tstart = menu_since_day ? maptrack.since_dayx : track_start2;
+    auto tend = maptrack.time_point * (last_recorded_time - tstart) + tstart;
+
+    bool tupdated = false;
+    std::tie (track_range.first, track_range.second)
+        = maptrack.track.time_range (tstart, tend, tupdated);
+    track_range.draw_invalidated |= tupdated;
+    track_range.length_invalidated |= tupdated;
+}
+
+//--------------------------------------------------------------------------------------------------
+
 void SSEIMGUI_CCONV
 render (int active)
 {
@@ -635,6 +655,8 @@ render (int active)
     imgui.igSetNextWindowSize (ImVec2 { 800, 600 }, ImGuiCond_FirstUseEver);
     if (imgui.igBegin ("SSE MapTrack", nullptr, ImGuiWindowFlags_NoScrollbar))
     {
+        update_track_range ();
+
         auto dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
         auto mapsz = to_vec2 (imgui.igGetContentRegionAvail ());
         // ~48 chars based on max text content widgets below:
@@ -694,7 +716,6 @@ render (int active)
 void
 draw_menu ()
 {
-    static bool since_day = true;
     static std::string track_start_s, track_end_s, since_dayx_s, last_xdays_s;
 
     float last_recorded_time = maptrack.track.last_time ();
@@ -728,8 +749,8 @@ draw_menu ()
     }
     imgui.igSeparator ();
 
-    if (imgui.igRadioButtonBool ("Since day", since_day))
-        since_day = true;
+    if (imgui.igRadioButtonBool ("Since day", menu_since_day))
+        menu_since_day = true;
     imgui.igSameLine (0, -1);
     imgui.igSetNextItemWidth (dragday_size.x);
     if (imgui.igDragInt ("##Since day", &maptrack.since_dayx, .25f, 0, last_recorded_day, "%d"))
@@ -738,8 +759,8 @@ draw_menu ()
     format_game_time_c<3> (since_dayx_s, "i.e. %md of %lm, %Y", maptrack.since_dayx);
     imgui.igText (since_dayx_s.c_str ());
 
-    if (imgui.igRadioButtonBool ("Last##X days", !since_day))
-        since_day = false;
+    if (imgui.igRadioButtonBool ("Last##X days", !menu_since_day))
+        menu_since_day = false;
     imgui.igSameLine (0, -1);
     imgui.igSetNextItemWidth (dragday_size.x);
     if (imgui.igDragInt ("##Last X days",
@@ -750,15 +771,10 @@ draw_menu ()
     format_game_time_c<4> (last_xdays_s, "days i.e. %md of %lm, %Y", track_start2);
     imgui.igText (last_xdays_s.c_str ());
 
-    auto tstart = since_day ? maptrack.since_dayx : track_start2;
+    auto tstart = menu_since_day ? maptrack.since_dayx : track_start2;
     auto tend = maptrack.time_point * (last_recorded_time - tstart) + tstart;
     format_game_time_c<1> (track_start_s, "From day %ri, %md of %lm", tstart);
     format_game_time_c<2> (track_end_s, "to day %ri, %md of %lm", tend);
-    bool tupdated = false;
-    std::tie (track_range.first, track_range.second)
-        = maptrack.track.time_range (tstart, tend, tupdated);
-    track_range.draw_invalidated |= tupdated;
-    track_range.length_invalidated |= tupdated;
 
     ImVec2 const button_size { dragday_size.x*3, 0 };
     imgui.igSeparator ();
