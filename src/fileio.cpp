@@ -337,8 +337,8 @@ load_settings ()
         }
 
         maptrack.fow.enabled = true;
-        maptrack.fow.resolution = 96;
-        maptrack.fow.discover   = 3;
+        maptrack.fow.resolution = 128;
+        maptrack.fow.discover   = 4;
         maptrack.fow.player_alpha = 0.f;
         maptrack.fow.default_alpha = 1.f;
         maptrack.fow.tracked_alpha = .5f;
