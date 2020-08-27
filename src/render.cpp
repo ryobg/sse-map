@@ -614,7 +614,23 @@ render (int active)
     if (!active)
         return;
 
+    imgui.igPushStyleColor (ImGuiCol_FrameBg,       ImVec4 {0, 0, 0, 0});
+    imgui.igPushStyleColor (ImGuiCol_Button,        ImVec4 {0, 0, 0, 0});
+    imgui.igPushStyleColor (ImGuiCol_TitleBgActive, ImVec4 {0, 0, 0, 1.f});
+    imgui.igPushStyleColor (ImGuiCol_CheckMark,     ImVec4 {.61f, .61f, .61f, 1.f});
+    imgui.igPushStyleColor (ImGuiCol_SliderGrab,    ImVec4 {.61f, .61f, .61f, 1.f});
+    imgui.igPushStyleColor (ImGuiCol_ResizeGrip,    ImVec4 {.61f, .61f, .61f, 1.f});
+    imgui.igPushStyleColor (ImGuiCol_TextSelectedBg,ImVec4 {.61f, .61f, .61f, 1.f});
+    imgui.igPushStyleColor (ImGuiCol_ButtonHovered ,ImVec4 {0.26f, 0.59f, 0.98f, 0.4f});
+    imgui.igPushStyleColor (ImGuiCol_FrameBgHovered,ImVec4 {0.26f, 0.59f, 0.98f, 0.4f});
+
     imgui.igPushFont (maptrack.font.imfont);
+
+    imgui.igPushStyleVarVec2 (ImGuiStyleVar_ItemSpacing, ImVec2 {5, 10});
+    imgui.igPushStyleVarVec2 (ImGuiStyleVar_FramePadding, ImVec2 {5, 5});
+    imgui.igPushStyleVarFloat (ImGuiStyleVar_FrameBorderSize, 1.f);
+    imgui.igPushStyleVarFloat (ImGuiStyleVar_WindowBorderSize, 0.f);
+
     imgui.igSetNextWindowSize (ImVec2 { 800, 600 }, ImGuiCond_FirstUseEver);
     if (imgui.igBegin ("SSE MapTrack", nullptr, 0))
     {
@@ -779,7 +795,9 @@ render (int active)
     if (show_icons_atlas)
         draw_icons_atlas ();
 
+    imgui.igPopStyleVar (4);
     imgui.igPopFont ();
+    imgui.igPopStyleColor (9);
 }
 
 //--------------------------------------------------------------------------------------------------
