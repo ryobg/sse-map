@@ -37,6 +37,7 @@
 maptrack_t maptrack = {};
 
 static bool show_settings = false,
+            show_menu = false,
             show_track_saveas = false,
             show_track_summary = false,
             show_track_load = false,
@@ -632,140 +633,30 @@ render (int active)
     imgui.igPushStyleVarFloat (ImGuiStyleVar_WindowBorderSize, 0.f);
 
     imgui.igSetNextWindowSize (ImVec2 { 800, 600 }, ImGuiCond_FirstUseEver);
-    if (imgui.igBegin ("SSE MapTrack", nullptr, 0))
+    if (imgui.igBegin ("SSE MapTrack", nullptr, ImGuiWindowFlags_NoScrollbar))
     {
-        static bool since_day = true;
-        static std::string track_start_s, track_end_s, since_dayx_s, last_xdays_s;
-
-        float last_recorded_time = maptrack.track.last_time ();
-        int last_recorded_day = int (last_recorded_time);
         auto dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
         auto mapsz = to_vec2 (imgui.igGetContentRegionAvail ());
-        mapsz.x -= dragday_size.x * 12; // ~48 chars based on max text content widgets below
+        // ~48 chars based on max text content widgets below:
+        mapsz.x -= dragday_size.x * (show_menu ? 12 : 1);
 
         imgui.igBeginGroup ();
         imgui.igSetNextItemWidth (mapsz.x);
         imgui.igSliderFloat ("##Time", &maptrack.time_point, 0, 1, "", 1);
         auto mappos = to_vec2 (imgui.igGetCursorPos ());
-        mapsz.y -= mappos.y;
+        mapsz.y -= mappos.y/2;
         draw_map (mappos, mapsz);
         imgui.igEndGroup ();
+
         imgui.igSameLine (0, -1);
-        imgui.igBeginGroup ();
-
-        imgui.igText (track_start_s.c_str ());
-        imgui.igText (track_end_s.c_str ());
-        imgui.igDummy (ImVec2 {0,1});
-        imgui.igText (current_location.c_str ());
-        imgui.igText (current_time.c_str ());
-
-        imgui.igSeparator ();
-        imgui.igCheckbox ("Tracking enabled", &maptrack.enabled);
-        imgui.igSetNextItemWidth (dragday_size.x*2);
-        if (imgui.igDragFloat ("seconds between updates",
-                    &maptrack.update_period, .1f, 1.f, 60.f, "%.1f", 1))
+        if (imgui.igButton (show_menu ? ">>##Menu" : "<<##Menu", ImVec2 {0, mapsz.y + mappos.y/2}))
+            show_menu = !show_menu;
+        if (show_menu)
         {
-            maptrack.update_period = std::max (1.f, maptrack.update_period);
-            update_timer ();
+            imgui.igSameLine (0, -1);
+            void draw_menu ();
+            draw_menu ();
         }
-        imgui.igSetNextItemWidth (dragday_size.x*2);
-        if (imgui.igDragFloat ("points merge distance", &maptrack.min_distance,
-                    1.f, 1, 1'000, "%1.0f", 1))
-        {
-            maptrack.min_distance = glm::clamp (1.f, maptrack.min_distance, 1'000.f);
-            maptrack.track.merge_distance (maptrack.min_distance);
-        }
-        imgui.igSeparator ();
-
-        if (imgui.igRadioButtonBool ("Since day", since_day))
-            since_day = true;
-        imgui.igSameLine (0, -1);
-        imgui.igSetNextItemWidth (dragday_size.x);
-        if (imgui.igDragInt ("##Since day", &maptrack.since_dayx, .25f, 0, last_recorded_day, "%d"))
-            maptrack.since_dayx = glm::clamp (0, maptrack.since_dayx, last_recorded_day);
-        imgui.igSameLine (0, -1);
-        format_game_time_c<3> (since_dayx_s, "i.e. %md of %lm, %Y", maptrack.since_dayx);
-        imgui.igText (since_dayx_s.c_str ());
-
-        if (imgui.igRadioButtonBool ("Last##X days", !since_day))
-            since_day = false;
-        imgui.igSameLine (0, -1);
-        imgui.igSetNextItemWidth (dragday_size.x);
-        if (imgui.igDragInt ("##Last X days",
-                    &maptrack.last_xdays, .25f, 1, 1 +last_recorded_day, "%d"))
-            maptrack.last_xdays = glm::clamp (1, maptrack.last_xdays, last_recorded_day);
-        imgui.igSameLine (0, -1);
-        auto track_start2 = std::max (0.f, last_recorded_time - maptrack.last_xdays);
-        format_game_time_c<4> (last_xdays_s, "days i.e. %md of %lm, %Y", track_start2);
-        imgui.igText (last_xdays_s.c_str ());
-
-        auto tstart = since_day ? maptrack.since_dayx : track_start2;
-        auto tend = maptrack.time_point * (last_recorded_time - tstart) + tstart;
-        format_game_time_c<1> (track_start_s, "From day %ri, %md of %lm", tstart);
-        format_game_time_c<2> (track_end_s, "to day %ri, %md of %lm", tend);
-        bool tupdated = false;
-        std::tie (track_range.first, track_range.second)
-            = maptrack.track.time_range (tstart, tend, tupdated);
-        track_range.draw_invalidated |= tupdated;
-        track_range.length_invalidated |= tupdated;
-
-        ImVec2 const button_size { dragday_size.x*3, 0 };
-        imgui.igSeparator ();
-        imgui.igText ("Track - %d point(s)", int (maptrack.track.size ()));
-        if (imgui.igButton ("Save##track", button_size))
-            save_track (default_track_file);
-        imgui.igSameLine (0, -1);
-        if (imgui.igButton ("Save As##track", button_size))
-            show_track_saveas = !show_track_saveas;
-        imgui.igSameLine (0, -1);
-        if (imgui.igButton ("Report##track", button_size))
-            show_track_summary = !show_track_summary;
-        if (imgui.igButton ("Load##track", button_size))
-            show_track_load = !show_track_load;
-        imgui.igSameLine (0, -1);
-        if (imgui.igButton ("Clear##track", button_size))
-            imgui.igOpenPopup ("Clear track?");
-        if (imgui.igBeginPopup ("Clear track?", 0))
-        {
-            if (imgui.igButton ("Confirm##clear track", ImVec2 {}))
-            {
-                maptrack.track.clear ();
-                imgui.igCloseCurrentPopup ();
-            }
-            imgui.igEndPopup ();
-        }
-
-        imgui.igSeparator ();
-        imgui.igText ("Icons - %d instance(s)", int (maptrack.icons.size ()));
-        if (imgui.igButton ("Save##icons", button_size))
-            save_icons (default_icons_file);
-        imgui.igSameLine (0, -1);
-        if (imgui.igButton ("Save As##icons", button_size))
-            show_icons_saveas = !show_icons_saveas;
-        imgui.igSameLine (0, -1);
-        if (imgui.igButton ("View atlas##icons", button_size))
-            show_icons_atlas = !show_icons_atlas;
-        if (imgui.igButton ("Load##icons", button_size))
-            show_icons_load = !show_icons_load;
-        imgui.igSameLine (0, -1);
-        if (imgui.igButton ("Clear##icons", button_size))
-            imgui.igOpenPopup ("Clear icons?");
-        if (imgui.igBeginPopup ("Clear icons?", 0))
-        {
-            if (imgui.igButton ("Confirm##clear icons", ImVec2 {}))
-            {
-                maptrack.icons.clear ();
-                icons_invalidated = true;
-                imgui.igCloseCurrentPopup ();
-            }
-            imgui.igEndPopup ();
-        }
-
-        imgui.igSeparator ();
-        if (imgui.igButton ("Settings", button_size))
-            show_settings = !show_settings;
-
-        imgui.igEndGroup ();
     }
     imgui.igEnd ();
 
@@ -796,6 +687,136 @@ render (int active)
     imgui.igPopStyleVar (4);
     imgui.igPopFont ();
     imgui.igPopStyleColor (9);
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void
+draw_menu ()
+{
+    static bool since_day = true;
+    static std::string track_start_s, track_end_s, since_dayx_s, last_xdays_s;
+
+    float last_recorded_time = maptrack.track.last_time ();
+    int last_recorded_day = int (last_recorded_time);
+
+    ImVec2 dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
+
+    imgui.igBeginGroup ();
+
+    imgui.igText (track_start_s.c_str ());
+    imgui.igText (track_end_s.c_str ());
+    imgui.igDummy (ImVec2 {0,1});
+    imgui.igText (current_location.c_str ());
+    imgui.igText (current_time.c_str ());
+
+    imgui.igSeparator ();
+    imgui.igCheckbox ("Tracking enabled", &maptrack.enabled);
+    imgui.igSetNextItemWidth (dragday_size.x*2);
+    if (imgui.igDragFloat ("seconds between updates",
+                &maptrack.update_period, .1f, 1.f, 60.f, "%.1f", 1))
+    {
+        maptrack.update_period = std::max (1.f, maptrack.update_period);
+        update_timer ();
+    }
+    imgui.igSetNextItemWidth (dragday_size.x*2);
+    if (imgui.igDragFloat ("points merge distance", &maptrack.min_distance,
+                1.f, 1, 1'000, "%1.0f", 1))
+    {
+        maptrack.min_distance = glm::clamp (1.f, maptrack.min_distance, 1'000.f);
+        maptrack.track.merge_distance (maptrack.min_distance);
+    }
+    imgui.igSeparator ();
+
+    if (imgui.igRadioButtonBool ("Since day", since_day))
+        since_day = true;
+    imgui.igSameLine (0, -1);
+    imgui.igSetNextItemWidth (dragday_size.x);
+    if (imgui.igDragInt ("##Since day", &maptrack.since_dayx, .25f, 0, last_recorded_day, "%d"))
+        maptrack.since_dayx = glm::clamp (0, maptrack.since_dayx, last_recorded_day);
+    imgui.igSameLine (0, -1);
+    format_game_time_c<3> (since_dayx_s, "i.e. %md of %lm, %Y", maptrack.since_dayx);
+    imgui.igText (since_dayx_s.c_str ());
+
+    if (imgui.igRadioButtonBool ("Last##X days", !since_day))
+        since_day = false;
+    imgui.igSameLine (0, -1);
+    imgui.igSetNextItemWidth (dragday_size.x);
+    if (imgui.igDragInt ("##Last X days",
+                &maptrack.last_xdays, .25f, 1, 1 +last_recorded_day, "%d"))
+        maptrack.last_xdays = glm::clamp (1, maptrack.last_xdays, last_recorded_day);
+    imgui.igSameLine (0, -1);
+    auto track_start2 = std::max (0.f, last_recorded_time - maptrack.last_xdays);
+    format_game_time_c<4> (last_xdays_s, "days i.e. %md of %lm, %Y", track_start2);
+    imgui.igText (last_xdays_s.c_str ());
+
+    auto tstart = since_day ? maptrack.since_dayx : track_start2;
+    auto tend = maptrack.time_point * (last_recorded_time - tstart) + tstart;
+    format_game_time_c<1> (track_start_s, "From day %ri, %md of %lm", tstart);
+    format_game_time_c<2> (track_end_s, "to day %ri, %md of %lm", tend);
+    bool tupdated = false;
+    std::tie (track_range.first, track_range.second)
+        = maptrack.track.time_range (tstart, tend, tupdated);
+    track_range.draw_invalidated |= tupdated;
+    track_range.length_invalidated |= tupdated;
+
+    ImVec2 const button_size { dragday_size.x*3, 0 };
+    imgui.igSeparator ();
+    imgui.igText ("Track - %d point(s)", int (maptrack.track.size ()));
+    if (imgui.igButton ("Save##track", button_size))
+        save_track (default_track_file);
+    imgui.igSameLine (0, -1);
+    if (imgui.igButton ("Save As##track", button_size))
+        show_track_saveas = !show_track_saveas;
+    imgui.igSameLine (0, -1);
+    if (imgui.igButton ("Report##track", button_size))
+        show_track_summary = !show_track_summary;
+    if (imgui.igButton ("Load##track", button_size))
+        show_track_load = !show_track_load;
+    imgui.igSameLine (0, -1);
+    if (imgui.igButton ("Clear##track", button_size))
+        imgui.igOpenPopup ("Clear track?");
+    if (imgui.igBeginPopup ("Clear track?", 0))
+    {
+        if (imgui.igButton ("Confirm##clear track", ImVec2 {}))
+        {
+            maptrack.track.clear ();
+            imgui.igCloseCurrentPopup ();
+        }
+        imgui.igEndPopup ();
+    }
+
+    imgui.igSeparator ();
+    imgui.igText ("Icons - %d instance(s)", int (maptrack.icons.size ()));
+    if (imgui.igButton ("Save##icons", button_size))
+        save_icons (default_icons_file);
+    imgui.igSameLine (0, -1);
+    if (imgui.igButton ("Save As##icons", button_size))
+        show_icons_saveas = !show_icons_saveas;
+    imgui.igSameLine (0, -1);
+    if (imgui.igButton ("View atlas##icons", button_size))
+        show_icons_atlas = !show_icons_atlas;
+    if (imgui.igButton ("Load##icons", button_size))
+        show_icons_load = !show_icons_load;
+    imgui.igSameLine (0, -1);
+    if (imgui.igButton ("Clear##icons", button_size))
+        imgui.igOpenPopup ("Clear icons?");
+    if (imgui.igBeginPopup ("Clear icons?", 0))
+    {
+        if (imgui.igButton ("Confirm##clear icons", ImVec2 {}))
+        {
+            maptrack.icons.clear ();
+            icons_invalidated = true;
+            imgui.igCloseCurrentPopup ();
+        }
+        imgui.igEndPopup ();
+    }
+
+    imgui.igSeparator ();
+    if (imgui.igButton ("Settings", button_size))
+        show_settings = !show_settings;
+
+    imgui.igEndGroup ();
 }
 
 //--------------------------------------------------------------------------------------------------
