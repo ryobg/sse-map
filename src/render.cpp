@@ -661,8 +661,6 @@ render (int active)
 
         imgui.igSeparator ();
         imgui.igCheckbox ("Tracking enabled", &maptrack.enabled);
-        imgui.igCheckbox ("Fog of War", &maptrack.fow.enabled);
-        imgui.igCheckbox ("Trail", &maptrack.track_enabled);
         imgui.igSetNextItemWidth (dragday_size.x*2);
         if (imgui.igDragFloat ("seconds between updates",
                     &maptrack.update_period, .1f, 1.f, 60.f, "%.1f", 1))
@@ -817,19 +815,22 @@ draw_settings ()
             maptrack.font.color = imgui.igGetColorU32Vec4 (col);
         imgui.igSliderFloat ("Scale##Default", &maptrack.font.imfont->Scale, .5f, 2.f, "%.2f", 1);
 
-        imgui.igText ("Track");
+        imgui.igText ("");
+        imgui.igCheckbox ("Track", &maptrack.track_enabled);
         col = imgui.igColorConvertU32ToFloat4 (maptrack.track_color);
         if (imgui.igColorEdit4 ("Color##Track", (float*) &col, cflags))
             maptrack.track_color = imgui.igGetColorU32Vec4 (col);
         imgui.igSliderFloat ("Width##Track", &maptrack.track_width, 1.f, 20.f, "%.1f", 1);
 
+        imgui.igText ("");
         imgui.igCheckbox ("Player circle", &maptrack.player.enabled);
         col = imgui.igColorConvertU32ToFloat4 (maptrack.player.color);
         if (imgui.igColorEdit4 ("Color##Player", (float*) &col, cflags))
             maptrack.player.color = imgui.igGetColorU32Vec4 (col);
         imgui.igSliderFloat ("Size##Player", &maptrack.player.size, 1.f, 20.f, "%.1f", 1);
 
-        imgui.igText ("Fog of War");
+        imgui.igText ("");
+        imgui.igCheckbox ("Fog of War", &maptrack.fow.enabled);
         imgui.igSliderInt ("Resolution##FoW", &maptrack.fow.resolution, 32, 256, "%d");
         imgui.igSliderInt ("Discover radius##FoW", &maptrack.fow.discover, 1, 8, "%d");
         imgui.igSliderFloat ("Default alpha##FoW", &maptrack.fow.default_alpha, 0, 1, "%.2f", 1);
