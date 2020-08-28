@@ -72,11 +72,19 @@ def pack (bld):
     import shutil, subprocess
     shutil.rmtree ("Data", ignore_errors=True)
     dll = APPNAME+".dll"
-    root = "Data/SKSE/Plugins/"
-    shutil.copytree ("assets/Data", "Data")
+    root = "data/skse/plugins/"
+    shutil.copytree ("assets/main/Data", "Data")
     shutil.copyfile ("out/"+dll, root+dll)
     subprocess.Popen (["x86_64-w64-mingw32-strip", "-g", root+dll]).communicate ()
     subprocess.Popen (["7z", "a", APPNAME+"-"+VERSION+".7z", 'Data']).communicate ()
+    shutil.rmtree ("Data", ignore_errors=True)
+
+def pack_optional_map (bld):
+    import shutil, subprocess
+    shutil.rmtree ("Data", ignore_errors=True)
+    root = "data/skse/plugins/"
+    shutil.copytree ("assets/optional-map/Data", "Data")
+    subprocess.Popen (["7z", "a", APPNAME+"-map-"+VERSION+".7z", 'Data']).communicate ()
     shutil.rmtree ("Data", ignore_errors=True)
 
 #---------------------------------------------------------------------------------------------------
