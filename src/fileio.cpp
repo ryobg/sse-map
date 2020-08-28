@@ -350,6 +350,12 @@ save_settings ()
                 { "file", maptrack.icon_atlas.file },
                 { "icon size", maptrack.icon_atlas.icon_size },
                 { "icon count", maptrack.icon_atlas.icon_count }
+            }},
+            { "Cursor info", {
+                { "enabled", maptrack.cursor_info.enabled },
+                { "deformation", maptrack.cursor_info.deformation },
+                { "color", maptrack.cursor_info.color },
+                { "scale", maptrack.cursor_info.scale }
             }}
         };
 
@@ -451,6 +457,20 @@ load_settings ()
         icon_atlas.size = texture_size (icon_atlas.ref).x;
         icon_atlas.icon_uvsize = float (icon_atlas.icon_size) / icon_atlas.size;
         icon_atlas.stride = maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size;
+
+        maptrack.cursor_info.enabled = true;
+        maptrack.cursor_info.color = IM_COL32_WHITE;
+        maptrack.cursor_info.scale = 1.f;
+        maptrack.cursor_info.deformation = false;
+        if (json.contains ("Cursor info"))
+        {
+            auto const& j = json.at ("Cursor info");
+            maptrack.cursor_info.enabled = j.value ("enabled", maptrack.cursor_info.enabled);
+            maptrack.cursor_info.color = j.value ("color", maptrack.cursor_info.color);
+            maptrack.cursor_info.scale = j.value ("scale", maptrack.cursor_info.scale);
+            maptrack.cursor_info.deformation = j.value ("deformation",
+                    maptrack.cursor_info.deformation);
+        };
 
         load_map_settings ();
     }

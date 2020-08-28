@@ -29,6 +29,7 @@
 #include <cstring>
 #include <cctype>
 #include <algorithm>
+#include <charconv>
 
 #include <windows.h>
 
@@ -72,11 +73,11 @@ static bool icons_invalidated = false;
 
 class map_project
 {
-    glm::vec2 wpos, uvtl, uvbr, mul;
+    glm::vec2 wpos, uvtl, mul, imul;
 public:
     map_project (glm::vec2 const& wpos, glm::vec2 const& wsz,
                  glm::vec2 const& uvtl, glm::vec2 const& uvbr)
-        : wpos (wpos), uvtl (uvtl), uvbr (uvbr), mul (wsz / (uvbr - uvtl))
+        : wpos (wpos), uvtl (uvtl), mul (wsz / (uvbr - uvtl)), imul ((uvbr - uvtl) / wsz)
     {
     }
     inline glm::vec2 operator () (glm::vec4 const& p) const
@@ -94,6 +95,10 @@ public:
     inline glm::vec2 map_to_screen (glm::vec2 const& p) const
     {
         return wpos + mul * (p - uvtl);
+    }
+    inline glm::vec2 screen_to_map (glm::vec2 const& p) const
+    {
+        return uvtl + imul * (p - wpos);
     }
 };
 
@@ -285,7 +290,7 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
     ImGuiIO* io = imgui.igGetIO ();
     if (hovered && io->MouseDown[1])
     {
-        auto tpos = uvtl + (uvbr - uvtl) * (to_vec2 (io->MousePos) - wpos) / wsz;
+        auto tpos = mproj.screen_to_map (to_vec2 (io->MousePos));
 
         auto it = std::find_if (maptrack.icons.begin (), maptrack.icons.end (),
                 [tpos] (icon_t const& i)
@@ -540,6 +545,60 @@ draw_fog (glm::vec2 const& wpos, glm::vec2 const& wsz,
 
 //--------------------------------------------------------------------------------------------------
 
+static void
+draw_cursor_info (glm::vec2 const& wpos, glm::vec2 const& wsz,
+               glm::vec2 const& uvtl, glm::vec2 const& uvbr,
+               bool hovered)
+{
+    if (!maptrack.cursor_info.enabled || !hovered)
+        return;
+
+    glm::vec2 const mouse_pos = to_vec2 (imgui.igGetIO ()->MousePos);
+
+    static std::array<char, 64> buff;
+    static char *p = buff.data (), *npos = buff.data (), *psz = buff.data ();
+
+    static glm::vec2 cached_mouse_pos (-1, -1);
+    if (mouse_pos != cached_mouse_pos)
+    {
+        cached_mouse_pos = mouse_pos;
+
+        map_project const proj (wpos, wsz, uvtl, uvbr);
+        auto gpos = maptrack.map_to_game (proj.screen_to_map (mouse_pos));
+
+        npos = psz = p = buff.data ();
+        char* n = buff.data () + buff.size ();
+        p = std::to_chars (p, n, int (gpos.x)).ptr; *p++ = ' ';
+        p = std::to_chars (p, n, int (gpos.y)).ptr; *p = 0;
+        npos = p;
+        psz = ++p;
+        if (maptrack.cursor_info.deformation)
+        {
+            auto usz = (uvbr - uvtl);
+            float ratio = (usz.x / usz.y) / (wsz.x / wsz.y);
+            p = std::to_chars (p, n, int (1000 * ratio)).ptr; *p = 0;
+        }
+    }
+
+    ImVec2 nwpos = to_ImVec2 (wpos);
+    float fsz = maptrack.font.imfont->FontSize * maptrack.cursor_info.scale;
+    if (buff.data () != npos)
+    {
+        imgui.ImDrawList_AddTextFontPtr (imgui.igGetWindowDrawList (),
+                maptrack.font.imfont, fsz, nwpos,
+                maptrack.cursor_info.color, buff.data (), npos, 0, nullptr);
+        nwpos.y += fsz * 1.5f;
+    }
+    if (psz != p)
+    {
+        imgui.ImDrawList_AddTextFontPtr (imgui.igGetWindowDrawList (),
+                maptrack.font.imfont, fsz, nwpos,
+                maptrack.cursor_info.color, psz, p, 0, nullptr);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
 /// Handles mostly map zoom and dragging but also and the actual drawing of course
 
 static void
@@ -614,10 +673,11 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
         mouse_wheel = io->MouseWheel ? (io->MouseWheel > 0 ? +1 : -1) : 0;
     }
 
-    draw_fog    (wpos + map_pos, map_size, uvtl, uvbr);
-    draw_icons  (wpos + map_pos, map_size, uvtl, uvbr, hovered);
-    draw_track  (wpos + map_pos, map_size, uvtl, uvbr);
-    draw_player (wpos + map_pos, map_size, uvtl, uvbr);
+    draw_fog         (wpos + map_pos, map_size, uvtl, uvbr);
+    draw_icons       (wpos + map_pos, map_size, uvtl, uvbr, hovered);
+    draw_track       (wpos + map_pos, map_size, uvtl, uvbr);
+    draw_player      (wpos + map_pos, map_size, uvtl, uvbr);
+    draw_cursor_info (wpos + map_pos, map_size, uvtl, uvbr, hovered);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -847,6 +907,24 @@ draw_menu ()
 
 //--------------------------------------------------------------------------------------------------
 
+/// Helper to display a little (?) mark which shows a tooltip when hovered.
+
+static void
+help_marker (const char* desc)
+{
+    imgui.igTextDisabled ("(?)");
+    if (imgui.igIsItemHovered (0))
+    {
+        imgui.igBeginTooltip ();
+        imgui.igPushTextWrapPos (imgui.igGetFontSize () * 35.0f);
+        imgui.igTextUnformatted (desc, nullptr);
+        imgui.igPopTextWrapPos ();
+        imgui.igEndTooltip ();
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
 void
 draw_settings ()
 {
@@ -861,6 +939,16 @@ draw_settings ()
         if (imgui.igColorEdit4 ("Color##Default", (float*) &col, cflags))
             maptrack.font.color = imgui.igGetColorU32Vec4 (col);
         imgui.igSliderFloat ("Scale##Default", &maptrack.font.imfont->Scale, .5f, 2.f, "%.2f", 1);
+
+        imgui.igText ("");
+        imgui.igCheckbox ("Map info cursor", &maptrack.cursor_info.enabled);
+        col = imgui.igColorConvertU32ToFloat4 (maptrack.cursor_info.color);
+        if (imgui.igColorEdit4 ("Color##Cursor", (float*) &col, cflags))
+            maptrack.cursor_info.color = imgui.igGetColorU32Vec4 (col);
+        imgui.igSliderFloat ("Scale##Cursor", &maptrack.cursor_info.scale, .5f, 4.f, "%.2f", 1);
+        imgui.igCheckbox ("Map deformation", &maptrack.cursor_info.deformation);
+        imgui.igSameLine (0, -1);
+        help_marker ("Value of 1000 means map is square.");
 
         imgui.igText ("");
         imgui.igCheckbox ("Track", &maptrack.track_enabled);

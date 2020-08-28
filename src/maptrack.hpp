@@ -226,7 +226,14 @@ struct maptrack_t
         int resolution;
         int discover;
         float player_alpha, default_alpha, tracked_alpha;
-    } fow;                  ///< Fog of War
+    } fow;                      ///< Fog of War
+
+    struct {
+        bool enabled;
+        bool deformation;
+        std::uint32_t color;
+        float scale;
+    } cursor_info;              ///< Stuff like world position under the cursor and map ratio
 
     /// Heavy scenario: 60 seconds by 60 minutes by 150 game hours = 540k elements
     track_t track;

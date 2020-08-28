@@ -55,9 +55,9 @@ def configure(conf):
     conf.load('compiler_cxx')
 
     if conf.env['CXX_NAME'] is 'gcc':
-        conf.check_cxx (msg="Checking for '-std=c++14'", cxxflags='-std=c++14') 
+        conf.check_cxx (msg="Checking for '-std=c++17'", cxxflags='-std=c++17') 
         conf.env.append_unique('CXXFLAGS', \
-                ['-std=c++14', "-O2", "-Wall", "-Wno-parentheses", "-D_UNICODE", "-DUNICODE"])
+                ['-std=c++17', "-O2", "-Wall", "-Wno-parentheses", "-D_UNICODE", "-DUNICODE"])
         conf.env.append_unique ('STLIB', ['stdc++', 'pthread', 'ole32'])
         conf.env.append_unique ('LINKFLAGS', ['-static-libgcc', '-static-libstdc++'])
 
