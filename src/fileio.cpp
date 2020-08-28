@@ -176,7 +176,6 @@ fix_older_icons (nlohmann::json const& json, icon_t& ico)
         return;
     ico.tl = maptrack.map_to_game (ico.tl);
     ico.br = maptrack.map_to_game (ico.br);
-    log () << "Loaded older icons, ran a fix." << std::endl;
 }
 
 //--------------------------------------------------------------------------------------------------
