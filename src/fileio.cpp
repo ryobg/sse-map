@@ -42,6 +42,7 @@
 
 std::string maptrack_directory = "Data\\SKSE\\Plugins\\sse-maptrack\\";
 std::string settings_location = maptrack_directory + "settings.json";
+std::string map_settings_location = maptrack_directory + "settings_map.json";
 std::string tracks_directory = maptrack_directory + "tracks\\";
 std::string default_track_file = tracks_directory + "default_track.bin";
 std::string icons_directory = maptrack_directory + "icons\\";
@@ -74,8 +75,8 @@ texture_size (ID3D11ShaderResourceView* srv)
 
 //--------------------------------------------------------------------------------------------------
 
-bool
-save_icons (std::string const& filename)
+void
+save_json (nlohmann::json& json, std::string const& file)
 {
     int maj, min, patch;
     const char* timestamp;
@@ -83,14 +84,55 @@ save_icons (std::string const& filename)
 
     try
     {
-        nlohmann::json json = {
-            { "version", {
-                { "major", maj },
-                { "minor", min },
-                { "patch", patch },
-                { "timestamp", timestamp }
-            }}
-        };
+        auto& j = json["version"];
+        j["major"] = maj;
+        j["minor"] = min;
+        j["patch"] = patch;
+        j["timestamp"] = timestamp;
+
+        std::ofstream of (file);
+        if (!of.is_open ())
+            log () << "Unable to open " << file << " for writting." << std::endl;
+        else
+            of << json.dump (4);
+    }
+    catch (std::exception const& ex)
+    {
+        log () << "Unable to save " << file << " as JSON: " << ex.what () << std::endl;
+        throw ex;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static nlohmann::json
+load_json (std::string const& file)
+{
+    try
+    {
+        nlohmann::json json = nlohmann::json::object ();
+        std::ifstream fi (file);
+        if (!fi.is_open ())
+            log () << "Unable to open " << file << " for reading." << std::endl;
+        else
+            fi >> json;
+        return json;
+    }
+    catch (std::exception const& ex)
+    {
+        log () << "Unable to parse " << file << " as JSON: " << ex.what () << std::endl;
+        throw ex;
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool
+save_icons (std::string const& filename)
+{
+    try
+    {
+        nlohmann::json json;
 
         int i = 0;
         for (auto const& ico: maptrack.icons)
@@ -101,13 +143,7 @@ save_icons (std::string const& filename)
                 { "aabb", { ico.tl.x, ico.tl.y, ico.br.x, ico.br.y }}
             };
 
-        std::ofstream of (filename);
-        if (!of.is_open ())
-        {
-            log () << "Unable to open " << filename << " for writting." << std::endl;
-            return false;
-        }
-        of << json.dump (4);
+        save_json (json, filename);
     }
     catch (std::exception const& ex)
     {
@@ -124,12 +160,7 @@ load_icons (std::string const& filename)
 {
     try
     {
-        nlohmann::json json = nlohmann::json::object ();
-        std::ifstream fi (filename);
-        if (!fi.is_open ())
-            log () << "Unable to open " << filename << " for reading." << std::endl;
-        else
-            fi >> json;
+        nlohmann::json json = load_json (filename);
 
         std::vector<icon_t> icons;
         icons.reserve (json.at ("icons").size ());
@@ -161,6 +192,54 @@ load_icons (std::string const& filename)
 //--------------------------------------------------------------------------------------------------
 
 static void
+save_map_settings ()
+{
+    nlohmann::json json = {
+        { "map",  {
+            { "file", maptrack.map.file.c_str () },
+            { "tint", hex_string (maptrack.map.tint) },
+            { "uv", { maptrack.map.uv[0], maptrack.map.uv[1],
+                      maptrack.map.uv[2], maptrack.map.uv[3] }},
+            { "scale", { maptrack.scale[0], maptrack.scale[1] }},
+            { "offset", { maptrack.offset[0], maptrack.offset[1] }}
+        }}
+    };
+    save_json (json, map_settings_location);
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static void
+load_map_settings ()
+{
+    auto json = load_json (map_settings_location);
+
+    maptrack.map = image_t {};
+    maptrack.map.uv = { 0, 0, 1, .711f };
+    maptrack.offset = { .4766f, .3760f };
+    maptrack.scale = { 1.f/(2048*205), 1.f/(2048*205) };
+    maptrack.map.file = maptrack_directory + "map.dds";
+
+    if (json.contains ("map"))
+    {
+        auto const& jmap = json.at ("map");
+        auto it = jmap.at ("uv").begin ();
+        for (float& v: maptrack.map.uv) v = *it++;
+        it = jmap.at ("scale").begin ();
+        for (float& v: maptrack.scale) v = *it++;
+        it = jmap.at ("offset").begin ();
+        for (float& v: maptrack.offset) v = *it++;
+        maptrack.map.tint = std::stoull (jmap.at ("tint").get<std::string> (), nullptr, 0);
+        maptrack.map.file = jmap.value ("file", maptrack_directory + "map.dds");
+    }
+
+    if (!sseimgui.ddsfile_texture (maptrack.map.file.c_str (), nullptr, &maptrack.map.ref))
+        throw std::runtime_error ("Bad map DDS file.");
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static void
 save_font (nlohmann::json& json, font_t const& font)
 {
     auto& jf = json[font.name + " font"];
@@ -168,80 +247,6 @@ save_font (nlohmann::json& json, font_t const& font)
     jf["color"] = hex_string (font.color);
     jf["size"] = font.imfont->FontSize;
     jf["file"] = font.file;
-}
-
-//--------------------------------------------------------------------------------------------------
-
-bool
-save_settings ()
-{
-    int maj, min, patch;
-    const char* timestamp;
-    maptrack_version (&maj, &min, &patch, &timestamp);
-
-    try
-    {
-        nlohmann::json json = {
-            { "version", {
-                { "major", maj },
-                { "minor", min },
-                { "patch", patch },
-                { "timestamp", timestamp }
-            }},
-            { "map",  {
-                { "file", maptrack.map.file.c_str () },
-                { "tint", hex_string (maptrack.map.tint) },
-                { "uv", { maptrack.map.uv[0], maptrack.map.uv[1],
-                          maptrack.map.uv[2], maptrack.map.uv[3] }},
-                { "scale", { maptrack.scale[0], maptrack.scale[1] }},
-                { "offset", { maptrack.offset[0], maptrack.offset[1] }}
-            }},
-            { "timeline", {
-                { "enabled", maptrack.enabled },
-                { "since dayx", maptrack.since_dayx },
-                { "last xdays", maptrack.last_xdays },
-                { "time point", maptrack.time_point }
-            }},
-            { "player", {
-                { "enabled", maptrack.player.enabled },
-                { "color", hex_string (maptrack.player.color) },
-                { "size", maptrack.player.size }
-            }},
-            { "Fog of War", {
-                { "enabled", maptrack.fow.enabled },
-                { "resolution", maptrack.fow.resolution },
-                { "discover", maptrack.fow.discover },
-                { "default alpha", maptrack.fow.default_alpha },
-                { "tracked alpha", maptrack.fow.tracked_alpha },
-            }},
-            { "update period", maptrack.update_period },
-            { "min distance", maptrack.min_distance },
-            { "track enabled", maptrack.track_enabled },
-            { "track width", maptrack.track_width },
-            { "track color", hex_string (maptrack.track_color) },
-            { "icon atlas", {
-                { "file", maptrack.icon_atlas.file },
-                { "icon size", maptrack.icon_atlas.icon_size },
-                { "icon count", maptrack.icon_atlas.icon_count }
-            }}
-        };
-
-        save_font (json, maptrack.font);
-
-        std::ofstream of (settings_location);
-        if (!of.is_open ())
-        {
-            log () << "Unable to open " << settings_location << " for writting." << std::endl;
-            return false;
-        }
-        of << json.dump (4);
-    }
-    catch (std::exception const& ex)
-    {
-        log () << "Unable to save settings file: " << ex.what () << std::endl;
-        return false;
-    }
-    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -280,6 +285,56 @@ load_font (nlohmann::json const& json, font_t& font)
             font_atlas, font.default_data, font.size, nullptr, nullptr);
         font.file.clear ();
     }
+}
+
+//--------------------------------------------------------------------------------------------------
+
+bool
+save_settings ()
+{
+    try
+    {
+        nlohmann::json json = {
+            { "timeline", {
+                { "enabled", maptrack.enabled },
+                { "since dayx", maptrack.since_dayx },
+                { "last xdays", maptrack.last_xdays },
+                { "time point", maptrack.time_point }
+            }},
+            { "player", {
+                { "enabled", maptrack.player.enabled },
+                { "color", hex_string (maptrack.player.color) },
+                { "size", maptrack.player.size }
+            }},
+            { "Fog of War", {
+                { "enabled", maptrack.fow.enabled },
+                { "resolution", maptrack.fow.resolution },
+                { "discover", maptrack.fow.discover },
+                { "default alpha", maptrack.fow.default_alpha },
+                { "tracked alpha", maptrack.fow.tracked_alpha },
+            }},
+            { "update period", maptrack.update_period },
+            { "min distance", maptrack.min_distance },
+            { "track enabled", maptrack.track_enabled },
+            { "track width", maptrack.track_width },
+            { "track color", hex_string (maptrack.track_color) },
+            { "icon atlas", {
+                { "file", maptrack.icon_atlas.file },
+                { "icon size", maptrack.icon_atlas.icon_size },
+                { "icon count", maptrack.icon_atlas.icon_count }
+            }}
+        };
+
+        save_font (json, maptrack.font);
+        save_json (json, settings_location);
+        save_map_settings ();
+    }
+    catch (std::exception const& ex)
+    {
+        log () << "Unable to save settings file: " << ex.what () << std::endl;
+        return false;
+    }
+    return true;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -369,25 +424,7 @@ load_settings ()
         icon_atlas.icon_uvsize = float (icon_atlas.icon_size) / icon_atlas.size;
         icon_atlas.stride = maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size;
 
-        maptrack.map = image_t {};
-        maptrack.map.uv = { 0, 0, 1, .711f };
-        maptrack.offset = { .4766f, .3760f };
-        maptrack.scale = { 1.f/(2048*205), 1.f/(2048*205) };
-        maptrack.map.file = maptrack_directory + "map.dds";
-        if (json.contains ("map"))
-        {
-            auto const& jmap = json.at ("map");
-            auto it = jmap.at ("uv").begin ();
-            for (float& v: maptrack.map.uv) v = *it++;
-            it = jmap.at ("scale").begin ();
-            for (float& v: maptrack.scale) v = *it++;
-            it = jmap.at ("offset").begin ();
-            for (float& v: maptrack.offset) v = *it++;
-            maptrack.map.tint = std::stoull (jmap.at ("tint").get<std::string> (), nullptr, 0);
-            maptrack.map.file = jmap.value ("file", maptrack_directory + "map.dds");
-        }
-        if (!sseimgui.ddsfile_texture (maptrack.map.file.c_str (), nullptr, &maptrack.map.ref))
-            throw std::runtime_error ("Bad map DDS file.");
+        load_map_settings ();
     }
     catch (std::exception const& ex)
     {
