@@ -79,20 +79,21 @@ public:
         : wpos (wpos), uvtl (uvtl), uvbr (uvbr), mul (wsz / (uvbr - uvtl))
     {
     }
-    /// Project a game point to a screen point
     inline glm::vec2 operator () (glm::vec4 const& p) const
     {
-        return this->operator () (game_to_map (p));
+        return game_to_screen (p.xy ());
     }
-    /// Project a map point to a screen point
     inline glm::vec2 operator () (glm::vec2 const& p) const
     {
-        return wpos + mul * (p - uvtl);
+        return map_to_screen (p);
     }
-    /// Project a game point to a map point
-    inline glm::vec2 game_to_map (glm::vec4 const& p) const
+    inline glm::vec2 game_to_screen (glm::vec2 const& p) const
     {
-        return maptrack.offset + glm::vec2 { p.x * maptrack.scale.x, -p.y * maptrack.scale.y };
+        return map_to_screen (maptrack.game_to_map (p));
+    }
+    inline glm::vec2 map_to_screen (glm::vec2 const& p) const
+    {
+        return wpos + mul * (p - uvtl);
     }
 };
 
@@ -494,11 +495,11 @@ draw_fog (glm::vec2 const& wpos, glm::vec2 const& wsz,
 
         for (auto it = track_range.first; it != track_range.second; ++it)
         {
-            glm::ivec2 cell (proj.game_to_map (*it) / step);
+            glm::ivec2 cell (maptrack.game_to_map (*it) / step);
             update_cells (cell.x, cell.y, tracked_alpha);
         }
 
-        glm::ivec2 cell (proj.game_to_map (player_location) / step);
+        glm::ivec2 cell (maptrack.game_to_map (player_location) / step);
         update_cells (cell.x, cell.y, player_alpha);
     }
 

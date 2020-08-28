@@ -136,12 +136,17 @@ save_icons (std::string const& filename)
 
         int i = 0;
         for (auto const& ico: maptrack.icons)
+        {
+            glm::vec2 tl = maptrack.map_to_game (ico.tl);
+            glm::vec2 br = maptrack.map_to_game (ico.br);
+
             json["icons"][std::to_string (i++)] = {
                 { "index", ico.index },
                 { "tint", hex_string (ico.tint) },
                 { "text", ico.text.c_str () },
-                { "aabb", { ico.tl.x, ico.tl.y, ico.br.x, ico.br.y }}
+                { "aabb", { tl.x, tl.y, br.x, br.y }}
             };
+        }
 
         save_json (json, filename);
     }
@@ -151,6 +156,27 @@ save_icons (std::string const& filename)
         return false;
     }
     return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static void
+fix_older_icons (nlohmann::json const& json, icon_t& ico)
+{
+    bool fix = false;
+    if (json.contains ("version"))
+    {
+        auto const& j = json["version"];
+        int maj = j.value ("major", 1);
+        int min = j.value ("minor", 3);
+        int pat = j.value ("patch", 2);
+        fix = maj <= 1 && min <= 3 && pat < 2;
+    }
+    if (!fix)
+        return;
+    ico.tl = maptrack.map_to_game (ico.tl);
+    ico.br = maptrack.map_to_game (ico.br);
+    log () << "Loaded older icons, ran a fix." << std::endl;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -173,6 +199,9 @@ load_icons (std::string const& filename)
             auto it = jico.at ("aabb").begin ();
             i.tl.x = *it++; i.tl.y = *it++;
             i.br.x = *it++; i.br.y = *it;
+            i.tl = maptrack.game_to_map (i.tl);
+            i.br = maptrack.game_to_map (i.br);
+            fix_older_icons (json, i);
             i.index = jico.at ("index");
             i.src = maptrack.icon_atlas.icon_uvsize * glm::vec2 {
                 i.index % maptrack.icon_atlas.stride, i.index / maptrack.icon_atlas.stride };

@@ -143,7 +143,7 @@ struct icon_atlas_t
 struct icon_t
 {
     glm::vec2 src;      ///< Top-left UV from the source texture icon_atlas_t#ref
-    glm::vec2 tl, br;   ///< Actual position on the map - in texture coordinates
+    glm::vec2 tl, br;   ///< Actual position on the map - in map UV coordinates
     std::uint32_t tint;
     std::uint32_t index;///< Z order index within #icon_atlas_t
     std::string text;   ///< Size constrained text for small tip info and for Journal interaction
@@ -171,6 +171,21 @@ struct maptrack_t
     image_t map;
     font_t font;
     glm::vec2 scale, offset; ///< For conversion between texture map and world coords
+
+    inline glm::vec2 map_to_game (glm::vec2 const& p) const
+    {
+        auto g = p - offset;
+        return glm::vec2 { g.x / scale.x, -g.y / scale.y };
+    }
+    inline glm::vec2 map_to_game (float xy) const
+    {
+        float mid = (scale.x + scale.y) * .5f;    /// Reduce deformations due to diferent XY scale
+        return glm::vec2 { xy / mid, -xy / mid };
+    }
+    inline glm::vec2 game_to_map (glm::vec2 const& p) const
+    {
+        return offset + glm::vec2 { p.x * scale.x, -p.y * scale.y };
+    }
 
     icon_atlas_t icon_atlas;
     std::vector<icon_t> icons;
