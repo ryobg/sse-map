@@ -106,14 +106,28 @@ void format_player_location (std::string&, const char*, std::array<float, 3> con
 
 /// Simple speed up (is it really needed? or it is for fun only?) through caching
 
-template<int Id>
-inline void format_game_time_c (std::string& out, const char* format, float value)
+template<int Id> inline void
+format_game_time_c (std::string& out, const char* format, float value)
 {
     static std::string cached_out;
     static float cached_value = std::numeric_limits<float>::quiet_NaN ();
     if (cached_value != value)
         format_game_time (cached_out, format, cached_value = value);
     out = cached_out;
+}
+
+/// Extract the hour, minute and seconds from a game encoded value
+
+template<typename T>
+static inline void
+game_time_hms (float source, T& h, T& m, T& s)
+{
+    float hms = source - int (source);
+    h = int (hms *= 24);
+    hms  -= int (hms);
+    m = int (hms *= 60);
+    hms  -= int (hms);
+    s = int (hms * 60);
 }
 
 //--------------------------------------------------------------------------------------------------

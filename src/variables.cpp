@@ -219,12 +219,8 @@ format_game_time (std::string& out, const char* format, float source)
     out = format;
 
     // Compute the format input
-    float hms = source - int (source);
-    int h = int (hms *= 24);
-    hms  -= int (hms);
-    int m = int (hms *= 60);
-    hms  -= int (hms);
-    int s = int (hms * 60);
+    int h, m, s;
+    game_time_hms (source, h, m, s);
 
     // Adjusts for starting date: Sun, 17 Jul 201 (considering that the year starts Wed)
     int d = int (source) + 228;

@@ -1078,6 +1078,11 @@ trackpoint_height (void* data, int idx) {
     return std::next (*reinterpret_cast<track_t::const_iterator*> (data), idx)->z;
 }
 
+static float
+trackpoint_speed (void* data, int idx) {
+    return reinterpret_cast<float const*> (data)[idx];
+}
+
 void
 draw_track_summary ()
 {
@@ -1085,22 +1090,57 @@ draw_track_summary ()
     {
         static double len = 0;
         if (track_range.length_invalidated)
-        {
-            track_range.length_invalidated = false;
             len = track_t::compute_length (track_range.first, track_range.second);
-        }
         imgui.igText ("Length: %.0f", len);
 
         auto bb = maptrack.track.bounding_box ();
+        imgui.igText ("");
         imgui.igText ("Bounding box min: %6.0f %6.0f %6.0f", bb.first.x, bb.first.y, bb.first.z);
         imgui.igText ("Bounding box max: %6.0f %6.0f %6.0f", bb.second.x, bb.second.y, bb.second.z);
 
-        const char* name = "Altitude histogram";
+        const char* name_a = "Altitude histogram";
         auto avail_sz = imgui.igGetContentRegionAvail ();
-        avail_sz.x -= imgui.igCalcTextSize (name, nullptr, false, -1.f).x;
-        imgui.igPlotLinesFnPtr (name, trackpoint_height, &track_range.first,
+        auto name_asz = imgui.igCalcTextSize (name_a, nullptr, false, -1.f);
+        avail_sz.x -= name_asz.x;
+        avail_sz.y /= 2; avail_sz.y -= 2*name_asz.y;
+        imgui.igPlotLinesFnPtr (name_a, trackpoint_height, &track_range.first,
                 int (std::distance (track_range.first, track_range.second)), 0, nullptr,
                 bb.first.z, bb.second.z, avail_sz);
+
+        // Move to track_t?
+        static float max_speed = 0.f, min_speed = 0.f;
+        static std::vector<float> speeds;
+        if (track_range.length_invalidated)
+        {
+            speeds.clear ();
+            min_speed = max_speed = 0;
+            auto n = std::distance (track_range.first, track_range.second);
+            if (n > 1)
+            {
+                min_speed = 16'777'216.f;
+                speeds.resize (n - 1);
+                auto out = speeds.begin ();
+                for (auto i = std::next (track_range.first); i != track_range.second; ++i, ++out)
+                {
+                    auto i0 = std::prev (i);
+                    int h, h0, m, m0, s, s0;
+                    game_time_hms (i->w, h, m, s);
+                    game_time_hms (i0->w, h0, m0, s0);
+                    float d = glm::distance (i->xyz (), i0->xyz ());
+                    *out = d / (h*3600+m*60+s - h0*3600-m0*60-s0);
+                    max_speed = std::max (max_speed, *out);
+                    min_speed = std::min (min_speed, *out);
+                }
+            }
+        }
+        avail_sz.y -= name_asz.y;
+        imgui.igText ("");
+        imgui.igText ("Speed min: %.2f pts/s, max: %.2f pts/s", min_speed, max_speed);
+        imgui.igPlotLinesFnPtr ("Speed histogram", trackpoint_speed,
+                speeds.data (), int (speeds.size ()), 0, nullptr,
+                min_speed, max_speed, avail_sz);
+
+        track_range.length_invalidated = false;
     }
     imgui.igEnd ();
 }
