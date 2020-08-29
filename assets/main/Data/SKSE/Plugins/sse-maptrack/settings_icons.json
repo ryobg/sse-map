@@ -1,0 +1,13 @@
+{
+    "icon atlas": {
+        "file": "Data\\SKSE\\Plugins\\sse-maptrack\\icons.dds",
+        "icon count": 3509,
+        "icon size": 64
+    },
+    "version": {
+        "major": 1,
+        "minor": 4,
+        "patch": 1,
+        "timestamp": "2020-08-29T13:06:08.290055+00:00"
+    }
+}

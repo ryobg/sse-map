@@ -43,6 +43,7 @@
 std::string maptrack_directory = "Data\\SKSE\\Plugins\\sse-maptrack\\";
 std::string settings_location = maptrack_directory + "settings.json";
 std::string map_settings_location = maptrack_directory + "settings_map.json";
+std::string icons_settings_location = maptrack_directory + "settings_icons.json";
 std::string tracks_directory = maptrack_directory + "tracks\\";
 std::string default_track_file = tracks_directory + "default_track.bin";
 std::string icons_directory = maptrack_directory + "icons\\";
@@ -317,6 +318,21 @@ load_font (nlohmann::json const& json, font_t& font)
 
 //--------------------------------------------------------------------------------------------------
 
+void
+save_icon_atlas ()
+{
+    nlohmann::json json = {
+        { "icon atlas", {
+            { "file", maptrack.icon_atlas.file },
+            { "icon size", maptrack.icon_atlas.icon_size },
+            { "icon count", maptrack.icon_atlas.icon_count }
+        }}
+    };
+    save_json (json, icons_settings_location);
+}
+
+//--------------------------------------------------------------------------------------------------
+
 bool
 save_settings ()
 {
@@ -346,11 +362,6 @@ save_settings ()
             { "track enabled", maptrack.track_enabled },
             { "track width", maptrack.track_width },
             { "track color", hex_string (maptrack.track_color) },
-            { "icon atlas", {
-                { "file", maptrack.icon_atlas.file },
-                { "icon size", maptrack.icon_atlas.icon_size },
-                { "icon count", maptrack.icon_atlas.icon_count }
-            }},
             { "Cursor info", {
                 { "enabled", maptrack.cursor_info.enabled },
                 { "deformation", maptrack.cursor_info.deformation },
@@ -361,6 +372,7 @@ save_settings ()
 
         save_font (json, maptrack.font);
         save_json (json, settings_location);
+        save_icon_atlas ();
         save_map_settings ();
     }
     catch (std::exception const& ex)
@@ -369,6 +381,31 @@ save_settings ()
         return false;
     }
     return true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void
+load_icon_atlas ()
+{
+    auto json = load_json (icons_settings_location);
+    auto& atlas = maptrack.icon_atlas;
+
+    atlas.file = maptrack_directory + "icons.dds";
+    atlas.icon_size = 64;
+    atlas.icon_count = 3509;
+    if (json.contains ("icon atlas"))
+    {
+        auto const& j = json.at ("icon atlas");
+        atlas.icon_size = j.at ("icon size");
+        atlas.icon_count = j.at ("icon count");
+        atlas.file = j.at ("file");
+    }
+    if (!sseimgui.ddsfile_texture (atlas.file.c_str (), nullptr, &atlas.ref))
+        throw std::runtime_error ("Bad icons DDS file.");
+    atlas.size = texture_size (atlas.ref).x;
+    atlas.icon_uvsize = float (atlas.icon_size) / atlas.size;
+    atlas.stride = maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -441,23 +478,6 @@ load_settings ()
             maptrack.fow.tracked_alpha = j.value ("tracked alpha", maptrack.fow.tracked_alpha);
         }
 
-        auto& icon_atlas = maptrack.icon_atlas;
-        icon_atlas.file = maptrack_directory + "icons.dds";
-        icon_atlas.icon_size = 64;
-        icon_atlas.icon_count = 3509;
-        if (json.contains ("icon atlas"))
-        {
-            auto const& jico = json.at ("icon atlas");
-            icon_atlas.icon_size = jico.at ("icon size");
-            icon_atlas.icon_count = jico.at ("icon count");
-            icon_atlas.file = jico.at ("file");
-        }
-        if (!sseimgui.ddsfile_texture (icon_atlas.file.c_str (), nullptr, &icon_atlas.ref))
-            throw std::runtime_error ("Bad icons DDS file.");
-        icon_atlas.size = texture_size (icon_atlas.ref).x;
-        icon_atlas.icon_uvsize = float (icon_atlas.icon_size) / icon_atlas.size;
-        icon_atlas.stride = maptrack.icon_atlas.size / maptrack.icon_atlas.icon_size;
-
         maptrack.cursor_info.enabled = true;
         maptrack.cursor_info.color = IM_COL32_WHITE;
         maptrack.cursor_info.scale = 1.f;
@@ -472,6 +492,7 @@ load_settings ()
                     maptrack.cursor_info.deformation);
         };
 
+        load_icon_atlas ();
         load_map_settings ();
     }
     catch (std::exception const& ex)

@@ -314,7 +314,7 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
             }
             else
             {
-                half = maptrack.icon_atlas.icon_uvsize * .5f;
+                half = icon_atlas_t::default_uvsize * .5f;
                 i.src = glm::vec2 (0);
                 i.tint = IM_COL32_WHITE;
                 i.index = 0;
@@ -359,7 +359,7 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
         if (imgui.igSliderFloat ("Scale##icon", &scale, .25f, 4.f, "%.2f", 1))
         {
             cached.ico_updated = true;
-            float half = glm::clamp (.25f, scale, 4.f) * .5 * maptrack.icon_atlas.icon_uvsize;
+            float half = glm::clamp (.25f, scale, 4.f) * .5f * icon_atlas_t::default_uvsize;
             glm::vec2 c = .5f * (ico->tl + ico->br);
             ico->tl = c - half;
             ico->br = c + half;

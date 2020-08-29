@@ -151,6 +151,8 @@ struct icon_atlas_t
     float icon_uvsize;        ///< Computed size of #icon_size (0..1] upon the texture #ref
     std::uint32_t icon_size;  ///< Sides size of each icon in pixels (e.g. 16, 32, 64)
     std::uint32_t icon_count; ///< Number of icons in loaded texture.
+     /// On a whim, same with the default icon atlas
+     static constexpr float default_uvsize = 64.f / 4096.f;
 };
 
 /// This structure may be compressed a bit later

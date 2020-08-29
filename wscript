@@ -29,6 +29,7 @@ Waf is Python (2/3) based build system similar to SCons & Make.
 '''
 
 import os
+import shutil, subprocess
 
 #---------------------------------------------------------------------------------------------------
 
@@ -68,24 +69,26 @@ def build (bld):
         includes = ['src', 'share'],
         cxxflags = ['-DMAPTRACK_TIMESTAMP="'+str(_datetime_now())+'"', '-DCIMGUI_NO_EXPORT'])
 
-def pack (bld):
-    import shutil, subprocess
+def _pack_asset (bld, folder, name):
     shutil.rmtree ("Data", ignore_errors=True)
+    shutil.copytree ("assets/"+folder+"/Data", "Data")
+    subprocess.Popen (["7z", "a", APPNAME+"-"+name+"-"+VERSION+".7z", 'Data']).communicate ()
+    shutil.rmtree ("Data", ignore_errors=True)
+    
+def pack (bld):
+    shutil.rmtree ("Data", ignore_errors=True)
+    shutil.copytree ("assets/main/Data", "Data")
+    
     dll = APPNAME+".dll"
     root = "data/skse/plugins/"
-    shutil.copytree ("assets/main/Data", "Data")
     shutil.copyfile ("out/"+dll, root+dll)
     subprocess.Popen (["x86_64-w64-mingw32-strip", "-g", root+dll]).communicate ()
+
     subprocess.Popen (["7z", "a", APPNAME+"-"+VERSION+".7z", 'Data']).communicate ()
     shutil.rmtree ("Data", ignore_errors=True)
 
-def pack_optional_map (bld):
-    import shutil, subprocess
-    shutil.rmtree ("Data", ignore_errors=True)
-    root = "data/skse/plugins/"
-    shutil.copytree ("assets/optional-map/Data", "Data")
-    subprocess.Popen (["7z", "a", APPNAME+"-map-"+VERSION+".7z", 'Data']).communicate ()
-    shutil.rmtree ("Data", ignore_errors=True)
+    _pack_asset (bld, "optional-map", "map")
+    _pack_asset (bld, "optional-icons", "icons")
 
 #---------------------------------------------------------------------------------------------------
 
