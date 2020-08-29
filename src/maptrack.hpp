@@ -151,6 +151,7 @@ struct icon_atlas_t
     float icon_uvsize;        ///< Computed size of #icon_size (0..1] upon the texture #ref
     std::uint32_t icon_size;  ///< Sides size of each icon in pixels (e.g. 16, 32, 64)
     std::uint32_t icon_count; ///< Number of icons in loaded texture.
+    std::string uid;          ///< Unique ID (sha256), helps when swapping atlases
      /// On a whim, same with the default icon atlas
      static constexpr float default_uvsize = 64.f / 4096.f;
 };
@@ -163,6 +164,7 @@ struct icon_t
     std::uint32_t tint;
     std::uint32_t index;///< Z order index within #icon_atlas_t
     std::string text;   ///< Size constrained text for small tip info and for Journal interaction
+    std::string atlas;  ///< The UID of the atlas to match to
 };
 
 struct font_t

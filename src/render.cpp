@@ -321,6 +321,7 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
             }
             i.tl = tpos - half;
             i.br = tpos + half;
+            i.atlas = maptrack.icon_atlas.uid;
             ico = maptrack.icons.insert (maptrack.icons.end (), i);
             cached.drawlist.push_back (make_image (i, maptrack.icons.size () - 1));
         }

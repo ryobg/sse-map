@@ -145,7 +145,8 @@ save_icons (std::string const& filename)
                 { "index", ico.index },
                 { "tint", hex_string (ico.tint) },
                 { "text", ico.text.c_str () },
-                { "aabb", { tl.x, tl.y, br.x, br.y }}
+                { "aabb", { tl.x, tl.y, br.x, br.y }},
+                { "atlas", ico.atlas }
             };
         }
 
@@ -194,6 +195,14 @@ load_icons (std::string const& filename)
         for (auto const& jico: json["icons"])
         {
             icon_t i;
+            i.atlas = jico.value ("atlas", maptrack.icon_atlas.uid);
+            if (i.atlas != maptrack.icon_atlas.uid)
+            {
+                log () << "Icon from different atlas (" << i.atlas <<
+                    "), than the currently loaded one (" << maptrack.icon_atlas.uid
+                    << "). Ignoring." << std::endl;
+                continue;
+            }
             i.tint = std::stoul (jico.at ("tint").get<std::string> (), nullptr, 0);
             i.text = jico.at ("text");
             auto it = jico.at ("aabb").begin ();
@@ -325,7 +334,8 @@ save_icon_atlas ()
         { "icon atlas", {
             { "file", maptrack.icon_atlas.file },
             { "icon size", maptrack.icon_atlas.icon_size },
-            { "icon count", maptrack.icon_atlas.icon_count }
+            { "icon count", maptrack.icon_atlas.icon_count },
+            { "uid", maptrack.icon_atlas.uid }
         }}
     };
     save_json (json, icons_settings_location);
@@ -394,12 +404,14 @@ load_icon_atlas ()
     atlas.file = maptrack_directory + "icons.dds";
     atlas.icon_size = 64;
     atlas.icon_count = 3509;
+    atlas.uid = "c70d7839c21dff225b61ec0f09395afbde4d222eed2d70fa6f2ce4ad50327ac2";
     if (json.contains ("icon atlas"))
     {
         auto const& j = json.at ("icon atlas");
         atlas.icon_size = j.at ("icon size");
         atlas.icon_count = j.at ("icon count");
         atlas.file = j.at ("file");
+        atlas.uid = j.value ("uid", atlas.uid);
     }
     if (!sseimgui.ddsfile_texture (atlas.file.c_str (), nullptr, &atlas.ref))
         throw std::runtime_error ("Bad icons DDS file.");

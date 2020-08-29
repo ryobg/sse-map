@@ -2,7 +2,8 @@
     "icon atlas": {
         "file": "Data\\SKSE\\Plugins\\sse-maptrack\\icons.dds",
         "icon count": 128,
-        "icon size": 64
+        "icon size": 64,
+        "uid": "5652848cb6ddcb749aee9c7fbd026754fafe002a3d4b7dcee0d410e9f077fd5b"
     },
     "version": {
         "major": 1,

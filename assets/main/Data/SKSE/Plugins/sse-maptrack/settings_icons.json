@@ -2,12 +2,13 @@
     "icon atlas": {
         "file": "Data\\SKSE\\Plugins\\sse-maptrack\\icons.dds",
         "icon count": 3509,
-        "icon size": 64
+        "icon size": 64,
+        "uid": "c70d7839c21dff225b61ec0f09395afbde4d222eed2d70fa6f2ce4ad50327ac2"
     },
     "version": {
         "major": 1,
         "minor": 4,
-        "patch": 1,
-        "timestamp": "2020-08-29T13:06:08.290055+00:00"
+        "patch": 2,
+        "timestamp": "2020-08-29T14:22:18.455643+00:00"
     }
 }
