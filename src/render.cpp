@@ -54,7 +54,7 @@ static HWND top_window = nullptr;
 
 /// Shared strings for rendering
 static std::string current_location, current_time;
-static glm::vec4 player_location { std::numeric_limits<float>::quiet_NaN () };
+static glm::vec2 player_location { std::numeric_limits<float>::quiet_NaN () };
 
 /// Current subrange of #maptrack.track selected for rendering, GUI controlled.
 static struct {
@@ -80,9 +80,9 @@ public:
         : wpos (wpos), uvtl (uvtl), mul (wsz / (uvbr - uvtl)), imul ((uvbr - uvtl) / wsz)
     {
     }
-    inline glm::vec2 operator () (glm::vec4 const& p) const
+    inline glm::vec2 operator () (track_point const& t) const
     {
-        return game_to_screen (p.xy ());
+        return game_to_screen (t.p.xy ());
     }
     inline glm::vec2 operator () (glm::vec2 const& p) const
     {
@@ -133,13 +133,13 @@ timer_callback (HWND hwnd, UINT message, UINT_PTR idTimer, DWORD dwTime)
 
     if (curr_world != "Skyrim" || !curr_cell.empty ())
     {
-        player_location = glm::vec4 { std::numeric_limits<float>::quiet_NaN () };
+        player_location = glm::vec2 { std::numeric_limits<float>::quiet_NaN () };
         return;
     }
-    player_location = glm::vec4 { curr_loc[0], curr_loc[1], curr_loc[2], curr_time };
+    player_location = glm::vec2 { curr_loc[0], curr_loc[1] };
 
     if (maptrack.enabled)
-        maptrack.track.add_point (player_location);
+        maptrack.track.add_point (glm::vec3 { curr_loc[0], curr_loc[1], curr_loc[2] }, curr_time);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -183,7 +183,7 @@ draw_player (glm::vec2 const& wpos, glm::vec2 const& wsz,
             glm::vec2 const& uvtl, glm::vec2 const& uvbr)
 {
     if (!maptrack.player.enabled
-            || glm::isfinite (player_location) != glm::bvec4 (true))
+            || glm::isfinite (player_location) != glm::bvec2 (true))
         return;
 
     imgui.ImDrawList_PushClipRect (imgui.igGetWindowDrawList (),
@@ -502,7 +502,7 @@ draw_fog (glm::vec2 const& wpos, glm::vec2 const& wsz,
 
         for (auto it = track_range.first; it != track_range.second; ++it)
         {
-            glm::ivec2 cell (maptrack.game_to_map (*it) / step);
+            glm::ivec2 cell (maptrack.game_to_map (it->p.xy ()) / step);
             update_cells (cell.x, cell.y, tracked_alpha);
         }
 
@@ -1165,7 +1165,7 @@ draw_track_load ()
 
 static float
 trackpoint_height (void* data, int idx) {
-    return std::next (*reinterpret_cast<track_t::const_iterator*> (data), idx)->z;
+    return std::next (*reinterpret_cast<track_t::const_iterator*> (data), idx)->p.z;
 }
 
 static float
@@ -1214,10 +1214,9 @@ draw_track_summary ()
                 {
                     auto i0 = std::prev (i);
                     int h, h0, m, m0, s, s0;
-                    game_time_hms (i->w, h, m, s);
-                    game_time_hms (i0->w, h0, m0, s0);
-                    float d = glm::distance (i->xyz (), i0->xyz ());
-                    *out = d / (h*3600+m*60+s - h0*3600-m0*60-s0);
+                    game_time_hms (i->t, h, m, s);
+                    game_time_hms (i0->t, h0, m0, s0);
+                    *out = i->d / (h*3600+m*60+s - h0*3600-m0*60-s0);
                     max_speed = std::max (max_speed, *out);
                     min_speed = std::min (min_speed, *out);
                 }

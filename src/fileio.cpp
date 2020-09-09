@@ -466,10 +466,10 @@ load_track (std::filesystem::path const& file)
             log () << "Unable to open " << file << " for reading." << std::endl;
             return false;
         }
-        read_binary<std::int32_t> (f);
-        read_binary<std::int32_t> (f);
-        read_binary<std::int32_t> (f);
-        maptrack.track.load_binary (f);
+        auto maj = read_binary<std::int32_t> (f);
+        auto min = read_binary<std::int32_t> (f);
+        auto pat = read_binary<std::int32_t> (f);
+        maptrack.track.load_binary (f, { maj, min, pat });
     }
     catch (std::exception const& ex)
     {
