@@ -67,7 +67,7 @@ def build (bld):
         target   = APPNAME, 
         source   = bld.path.ant_glob (["src/*.cpp", "share/utils/*.cpp"]), 
         includes = ['src', 'share'],
-        cxxflags = ['-DMAPTRACK_TIMESTAMP="'+str(_datetime_now())+'"', '-DCIMGUI_NO_EXPORT'])
+        cxxflags = ['-DPLUGIN_TIMESTAMP="'+str(_datetime_now())+'"', '-DCIMGUI_NO_EXPORT'])
 
 def _pack_asset (bld, folder, name):
     shutil.rmtree ("Data", ignore_errors=True)

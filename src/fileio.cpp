@@ -27,27 +27,19 @@
 
 #include "maptrack.hpp"
 #include <gsl/gsl_util>
-#include <fstream>
-
-// Warning come in a BSON parser, which is not used, and probably shouldn't be
-#if defined(__GNUC__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wformat="
-#  pragma GCC diagnostic ignored "-Wformat-extra-args"
-#  include <nlohmann/json.hpp>
-#  pragma GCC diagnostic pop
-#endif
 
 //--------------------------------------------------------------------------------------------------
 
-std::string maptrack_directory = "Data\\SKSE\\Plugins\\sse-maptrack\\";
-std::string settings_location = maptrack_directory + "settings.json";
-std::string map_settings_location = maptrack_directory + "settings_map.json";
-std::string icons_settings_location = maptrack_directory + "settings_icons.json";
-std::string tracks_directory = maptrack_directory + "tracks\\";
-std::string default_track_file = tracks_directory + "default_track.bin";
-std::string icons_directory = maptrack_directory + "icons\\";
-std::string default_icons_file = icons_directory + "default_icons.json";
+locations_type const locations =
+{
+        plugin_directory () / "settings.json",
+        plugin_directory () / "settings_map.json",
+        plugin_directory () / "settings_icons.json",
+        plugin_directory () / "tracks\\",
+        plugin_directory () / "tracks\\default_track.bin",
+        plugin_directory () / "icons\\",
+        plugin_directory () / "icons\\default_icons.json"
+};
 
 //--------------------------------------------------------------------------------------------------
 
@@ -76,60 +68,8 @@ texture_size (ID3D11ShaderResourceView* srv)
 
 //--------------------------------------------------------------------------------------------------
 
-void
-save_json (nlohmann::json& json, std::string const& file)
-{
-    int maj, min, patch;
-    const char* timestamp;
-    maptrack_version (&maj, &min, &patch, &timestamp);
-
-    try
-    {
-        auto& j = json["version"];
-        j["major"] = maj;
-        j["minor"] = min;
-        j["patch"] = patch;
-        j["timestamp"] = timestamp;
-
-        std::ofstream of (file);
-        if (!of.is_open ())
-            log () << "Unable to open " << file << " for writting." << std::endl;
-        else
-            of << json.dump (4);
-    }
-    catch (std::exception const& ex)
-    {
-        log () << "Unable to save " << file << " as JSON: " << ex.what () << std::endl;
-        throw ex;
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
-
-static nlohmann::json
-load_json (std::string const& file)
-{
-    try
-    {
-        nlohmann::json json = nlohmann::json::object ();
-        std::ifstream fi (file);
-        if (!fi.is_open ())
-            log () << "Unable to open " << file << " for reading." << std::endl;
-        else
-            fi >> json;
-        return json;
-    }
-    catch (std::exception const& ex)
-    {
-        log () << "Unable to parse " << file << " as JSON: " << ex.what () << std::endl;
-        throw ex;
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
-
 bool
-save_icons (std::string const& filename)
+save_icons (std::filesystem::path const& filename)
 {
     try
     {
@@ -183,7 +123,7 @@ fix_older_icons (nlohmann::json const& json, icon_t& ico)
 //--------------------------------------------------------------------------------------------------
 
 bool
-load_icons (std::string const& filename)
+load_icons (std::filesystem::path const& filename)
 {
     try
     {
@@ -242,7 +182,7 @@ save_map_settings ()
             { "offset", { maptrack.offset[0], maptrack.offset[1] }}
         }}
     };
-    save_json (json, map_settings_location);
+    save_json (json, locations.map_settings);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -250,13 +190,13 @@ save_map_settings ()
 static void
 load_map_settings ()
 {
-    auto json = load_json (map_settings_location);
+    auto json = load_json (locations.map_settings);
 
     maptrack.map = image_t {};
     maptrack.map.uv = { 0, 0, 1, .711f };
     maptrack.offset = { .4766f, .3760f };
     maptrack.scale = { 1.f/(2048*205), 1.f/(2048*205) };
-    maptrack.map.file = maptrack_directory + "map.dds";
+    maptrack.map.file = (plugin_directory () / "map.dds").string ();
 
     if (json.contains ("map"))
     {
@@ -268,61 +208,11 @@ load_map_settings ()
         it = jmap.at ("offset").begin ();
         for (float& v: maptrack.offset) v = *it++;
         maptrack.map.tint = std::stoull (jmap.at ("tint").get<std::string> (), nullptr, 0);
-        maptrack.map.file = jmap.value ("file", maptrack_directory + "map.dds");
+        maptrack.map.file = jmap.value ("file", maptrack.map.file);
     }
 
     if (!sseimgui.ddsfile_texture (maptrack.map.file.c_str (), nullptr, &maptrack.map.ref))
         throw std::runtime_error ("Bad map DDS file.");
-}
-
-//--------------------------------------------------------------------------------------------------
-
-static void
-save_font (nlohmann::json& json, font_t const& font)
-{
-    auto& jf = json[font.name + " font"];
-    jf["scale"] = font.imfont->Scale;
-    jf["color"] = hex_string (font.color);
-    jf["size"] = font.imfont->FontSize;
-    jf["file"] = font.file;
-}
-
-//--------------------------------------------------------------------------------------------------
-
-static void
-load_font (nlohmann::json const& json, font_t& font)
-{
-    std::string section = font.name + " font";
-    nlohmann::json jf;
-    if (json.contains (section))
-        jf = json[section];
-    else jf = nlohmann::json::object ();
-
-    font.color = std::stoull (jf.value ("color", hex_string (font.color)), nullptr, 0);
-    font.scale = jf.value ("scale", font.scale);
-    auto set_scale = gsl::finally ([&font] { font.imfont->Scale = font.scale; });
-
-    // The UI load button, otherwise we have to recreate all fonts outside the rendering loop
-    // and thats too much of hassle if not tuning all other params through the UI too.
-    if (font.imfont)
-        return;
-
-    font.size = jf.value ("size", font.size);
-    font.file = jf.value ("file", maptrack_directory + font.name + ".ttf");
-    if (font.file.empty ())
-        font.file = maptrack_directory + font.name + ".ttf";
-
-    auto font_atlas = imgui.igGetIO ()->Fonts;
-
-    if (file_exists (font.file))
-        font.imfont = imgui.ImFontAtlas_AddFontFromFileTTF (
-                font_atlas, font.file.c_str (), font.size, nullptr, nullptr);
-    if (!font.imfont)
-    {
-        font.imfont = imgui.ImFontAtlas_AddFontFromMemoryCompressedBase85TTF (
-            font_atlas, font.default_data, font.size, nullptr, nullptr);
-        font.file.clear ();
-    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -338,7 +228,7 @@ save_icon_atlas ()
             { "uid", maptrack.icon_atlas.uid }
         }}
     };
-    save_json (json, icons_settings_location);
+    save_json (json, locations.icons_settings);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -381,7 +271,7 @@ save_settings ()
         };
 
         save_font (json, maptrack.font);
-        save_json (json, settings_location);
+        save_json (json, locations.settings);
         save_icon_atlas ();
         save_map_settings ();
     }
@@ -398,10 +288,10 @@ save_settings ()
 void
 load_icon_atlas ()
 {
-    auto json = load_json (icons_settings_location);
+    auto json = load_json (locations.icons_settings);
     auto& atlas = maptrack.icon_atlas;
 
-    atlas.file = maptrack_directory + "icons.dds";
+    atlas.file = (plugin_directory () / "icons.dds").string ();
     atlas.icon_size = 64;
     atlas.icon_count = 3509;
     atlas.uid = "c70d7839c21dff225b61ec0f09395afbde4d222eed2d70fa6f2ce4ad50327ac2";
@@ -428,9 +318,9 @@ load_settings ()
     try
     {
         nlohmann::json json = nlohmann::json::object ();
-        std::ifstream fi (settings_location);
+        std::ifstream fi (locations.settings);
         if (!fi.is_open ())
-            log () << "Unable to open " << settings_location << " for reading." << std::endl;
+            log () << "Unable to open " << locations.settings << " for reading." << std::endl;
         else
             fi >> json;
 
@@ -527,10 +417,10 @@ write_binary (Stream& os, T const& value)
 //--------------------------------------------------------------------------------------------------
 
 bool
-save_track (std::string const& file)
+save_track (std::filesystem::path const& file)
 {
     std::int32_t maj, min, patch;
-    maptrack_version (&maj, &min, &patch, nullptr);
+    plugin_version (&maj, &min, &patch, nullptr);
     try
     {
         std::ofstream f (file, std::ios::binary | std::ios::out);
@@ -566,7 +456,7 @@ read_binary (Stream& is)
 //--------------------------------------------------------------------------------------------------
 
 bool
-load_track (std::string const& file)
+load_track (std::filesystem::path const& file)
 {
     try
     {

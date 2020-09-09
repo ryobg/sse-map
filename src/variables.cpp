@@ -43,26 +43,6 @@
 /// Defined in skse.cpp
 extern sseh_api sseh;
 
-/// To turn relative addresses into absolute so that the Skyrim watch points can be set.
-static std::uintptr_t skyrim_base = 0;
-
-/// Obtains an address to a relative object, to a relative object, to a relative object, to a...
-template<class T, unsigned N = 1>
-struct relocation
-{
-    std::array<std::uintptr_t, 1+N> offsets;
-    T obtain () const
-    {
-        std::uintptr_t that = skyrim_base;
-        for (unsigned i = 0; i < N; ++i)
-        {
-            that = *reinterpret_cast<std::uintptr_t*> (that + offsets[i]);
-            if (!that) return nullptr;
-        }
-        return reinterpret_cast<T> (that + offsets[N]);
-    }
-};
-
 /**
  * Current in-game time since...
  *
@@ -90,7 +70,7 @@ struct relocation
  * *0x1ec3bc8 +  0x34
  */
 
-struct relocation<float*> game_epoch { 0x1ec3bc8, 0x34 };
+struct relocation<float*, 2> game_epoch { 0x1ec3bc8, 0x34 };
 
 /**
  * Player position as 3 xyz floats.
@@ -102,11 +82,11 @@ struct relocation<float*> game_epoch { 0x1ec3bc8, 0x34 };
  * TESObjectRERF -> pos as NiPoint3.
  */
 
-struct relocation<float*> player_pos { 0x2f26ef8, 0x54 };
+struct relocation<float*, 2> player_pos { 0x2f26ef8, 0x54 };
 
 /// Used to differentiate between exterior (unnamed) and interior (named) cell in Skyrim worldspace
 
-struct relocation<const char*, 3> player_cell { 0x2f26ef8, 0x60, 0x28, 0 };
+struct relocation<const char*, 4> player_cell { 0x2f26ef8, 0x60, 0x28, 0 };
 
 /**
  * Current worldspace pointer from the PlayerCharacter class accroding to SKSE.
@@ -115,7 +95,7 @@ struct relocation<const char*, 3> player_cell { 0x2f26ef8, 0x60, 0x28, 0 };
  * during Main Menu, and likely in some locations like the Alternate Start room.
  */
 
-struct relocation<const char*, 3> worldspace_name { 0x2f26ef8, 0x628, 0x28, 0x00 };
+struct relocation<const char*, 4> worldspace_name { 0x2f26ef8, 0x628, 0x28, 0 };
 
 //--------------------------------------------------------------------------------------------------
 
@@ -286,7 +266,6 @@ format_game_time (std::string& out, const char* format, float source)
 bool
 setup_variables ()
 {
-    skyrim_base = reinterpret_cast<std::uintptr_t> (::GetModuleHandle (nullptr));
     if (!sseh.find_target)
         return false;
 

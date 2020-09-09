@@ -171,8 +171,8 @@ setup ()
         return false;
     if (!update_timer ())
         return false;
-    load_track (default_track_file);
-    load_icons (default_icons_file);
+    load_track (locations.default_track);
+    load_icons (locations.default_icons);
     return true;
 }
 
@@ -368,7 +368,8 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
 
         if (imgui.igButton ("Open in Journal", ImVec2 {}))
         {
-            if (dispatch_journal (ico->text))
+            std::vector<char> tmp (ico->text.cbegin (), ico->text.cend ()); tmp.push_back ('\0');
+            if (dispatch_skse_message (tmp.data (), tmp.size (), "sse-journal"))
                 imgui.igCloseCurrentPopup ();
         }
 
@@ -851,7 +852,7 @@ draw_menu ()
     imgui.igSeparator ();
     imgui.igText ("Track - %d point(s)", int (maptrack.track.size ()));
     if (imgui.igButton ("Save##track", button_size))
-        save_track (default_track_file);
+        save_track (locations.default_track);
     imgui.igSameLine (0, -1);
     if (imgui.igButton ("Save As##track", button_size))
         show_track_saveas = !show_track_saveas;
@@ -876,7 +877,7 @@ draw_menu ()
     imgui.igSeparator ();
     imgui.igText ("Icons - %d instance(s)", int (maptrack.icons.size ()));
     if (imgui.igButton ("Save##icons", button_size))
-        save_icons (default_icons_file);
+        save_icons (locations.default_icons);
     imgui.igSameLine (0, -1);
     if (imgui.igButton ("Save As##icons", button_size))
         show_icons_saveas = !show_icons_saveas;
@@ -1022,15 +1023,15 @@ draw_icons_saveas ()
     static std::string name;
     if (imgui.igBegin ("SSE MapTrack: Save Icons As", &show_icons_saveas, 0))
     {
-        imgui.igText (icons_directory.c_str ());
+        imgui.igText (locations.icons_directory.string ().c_str ());
         imgui_input_text ("Name", name);
         if (imgui.igButton ("Cancel", ImVec2 {}))
             show_icons_saveas = false;
         imgui.igSameLine (0, -1);
         if (imgui.igButton ("Save", ImVec2 {}))
         {
-            auto file = icons_directory + name + ".json";
-            if (file_exists (file))
+            auto file = locations.icons_directory / (name + ".json");
+            if (std::filesystem::exists (file))
                 imgui.igOpenPopup ("Overwrite file?");
             else if (save_icons (file))
                 show_icons_saveas = false;
@@ -1038,7 +1039,7 @@ draw_icons_saveas ()
         if (imgui.igBeginPopup ("Overwrite file?", 0))
         {
             if (imgui.igButton ("Confirm##file", ImVec2 {}))
-                if (save_icons (icons_directory + name + ".json"))
+                if (save_icons (locations.icons_directory / (name + ".json")))
                     show_icons_saveas = false, imgui.igCloseCurrentPopup ();
             imgui.igEndPopup ();
         }
@@ -1054,15 +1055,15 @@ draw_track_saveas ()
     static std::string name;
     if (imgui.igBegin ("SSE MapTrack: Save Track As", &show_track_saveas, 0))
     {
-        imgui.igText (tracks_directory.c_str ());
+        imgui.igText (locations.tracks_directory.string ().c_str ());
         imgui_input_text ("Name", name);
         if (imgui.igButton ("Cancel", ImVec2 {}))
             show_track_saveas = false;
         imgui.igSameLine (0, -1);
         if (imgui.igButton ("Save", ImVec2 {}))
         {
-            auto file = tracks_directory + name + ".bin";
-            if (file_exists (file))
+            auto file = locations.tracks_directory / (name + ".bin");
+            if (std::filesystem::exists (file))
                 imgui.igOpenPopup ("Overwrite file?");
             else if (save_track (file))
                 show_track_saveas = false;
@@ -1070,7 +1071,7 @@ draw_track_saveas ()
         if (imgui.igBeginPopup ("Overwrite file?", 0))
         {
             if (imgui.igButton ("Confirm##file", ImVec2 {}))
-                if (save_track (tracks_directory + name + ".bin"))
+                if (save_track (locations.tracks_directory / (name + ".bin")))
                     show_track_saveas = false, imgui.igCloseCurrentPopup ();
             imgui.igEndPopup ();
         }
@@ -1101,20 +1102,20 @@ draw_icons_load ()
     if (show_icons_load != reload_names)
     {
         reload_names = show_icons_load;
-        enumerate_files (icons_directory + "*.json", names);
+        enumerate_files (locations.icons_directory.string () + "*.json", names);
         for (auto& n: names)
             n.erase (n.find_last_of ('.'));
     }
 
     if (imgui.igBegin ("SSE MapTrack: Load icons", &show_icons_load, 0))
     {
-        imgui.igText (icons_directory.c_str ());
+        imgui.igText (locations.icons_directory.string ().c_str ());
         imgui.igListBoxFnPtr ("##Names",
                 &namesel, extract_vector_string, &names, int (names.size ()), items);
         imgui.igSameLine (0, -1);
         imgui.igBeginGroup ();
         if (imgui.igButton ("Load", ImVec2 {-1, 0}) && unsigned (namesel) < names.size ())
-            if (load_icons (icons_directory + names[namesel] + ".json"))
+            if (load_icons (locations.icons_directory / (names[namesel] + ".json")))
             	show_icons_load = false, icons_invalidated = true;
         if (imgui.igButton ("Cancel", ImVec2 {-1, 0}))
             show_icons_load = false;
@@ -1137,20 +1138,20 @@ draw_track_load ()
     if (show_track_load != reload_names)
     {
         reload_names = show_track_load;
-        enumerate_files (tracks_directory + "*.bin", names);
+        enumerate_files (locations.tracks_directory.string () + "*.bin", names);
         for (auto& n: names)
             n.erase (n.find_last_of ('.'));
     }
 
     if (imgui.igBegin ("SSE MapTrack: Load track", &show_track_load, 0))
     {
-        imgui.igText (tracks_directory.c_str ());
+        imgui.igText (locations.tracks_directory.string ().c_str ());
         imgui.igListBoxFnPtr ("##Names",
                 &namesel, extract_vector_string, &names, int (names.size ()), items);
         imgui.igSameLine (0, -1);
         imgui.igBeginGroup ();
         if (imgui.igButton ("Load", ImVec2 {-1, 0}) && unsigned (namesel) < names.size ())
-            if (load_track (tracks_directory + names[namesel] + ".bin"))
+            if (load_track (locations.tracks_directory / (names[namesel] + ".bin")))
             	show_track_load = false;
         if (imgui.igButton ("Cancel", ImVec2 {-1, 0}))
             show_track_load = false;

@@ -1,26 +1,26 @@
 /**
  * @file skse.cpp
- * @brief Implements SKSE plugin for SSE Map
+ * @brief Implements SKSE plugin for the current project.
  * @internal
  *
- * This file is part of Skyrim SE Map mod (aka Map).
+ * This file is part of General Utilities project (aka Utils).
  *
- *   Map is free software: you can redistribute it and/or modify it
+ *   Utils is free software: you can redistribute it and/or modify it
  *   under the terms of the GNU Lesser General Public License as published
  *   by the Free Software Foundation, either version 3 of the License, or
  *   (at your option) any later version.
  *
- *   Map is distributed in the hope that it will be useful,
+ *   Utils is distributed in the hope that it will be useful,
  *   but WITHOUT ANY WARRANTY; without even the implied warranty of
  *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  *   GNU Lesser General Public License for more details.
  *
  *   You should have received a copy of the GNU Lesser General Public
- *   License along with Map. If not, see <http://www.gnu.org/licenses/>.
+ *   License along with Utils If not, see <http://www.gnu.org/licenses/>.
  *
  * @endinternal
  *
- * @ingroup Public API
+ * @ingroup Utilities
  *
  * @details
  */
@@ -28,11 +28,8 @@
 #include <sse-imgui/sse-imgui.h>
 #include <sse-gui/sse-gui.h>
 #include <sse-hooks/sse-hooks.h>
-#include <utils/winutils.hpp>
+#include <utils/plugin.hpp>
 
-#include <fstream>
-#include <iomanip>
-#include <chrono>
 #include <array>
 #include <cstdint>
 typedef std::uint32_t UInt32;
@@ -47,9 +44,6 @@ static PluginHandle plugin = 0;
 /// To communicate with the other SKSE plugins.
 static SKSEMessagingInterface* messages = nullptr;
 
-/// Log file in pre-defined location
-static std::ofstream logfile;
-
 /// [shared] Local initialization
 sseimgui_api sseimgui = {};
 
@@ -59,68 +53,13 @@ imgui_api imgui = {};
 /// [shared] Local initialization
 sseh_api sseh = {};
 
-/// [shared] Reports current log file path (for user friendly messages)
-std::string logfile_path;
-
-//--------------------------------------------------------------------------------------------------
-
-static void
-open_log ()
-{
-    logfile_path = "";
-    if (known_folder_path (FOLDERID_Documents, logfile_path))
-    {
-        // Before plugins are loaded, SKSE takes care to create the directiories
-        logfile_path += "\\My Games\\Skyrim Special Edition\\SKSE\\";
-    }
-    logfile_path += "sse-maptrack.log";
-    logfile.open (logfile_path);
-}
-
-//--------------------------------------------------------------------------------------------------
-
-decltype(logfile)&
-log ()
-{
-    // MinGW 4.9.1 have no std::put_time()
-    using std::chrono::system_clock;
-    auto now_c = system_clock::to_time_t (system_clock::now ());
-    auto loc_c = std::localtime (&now_c);
-    logfile << '['
-            << 1900 + loc_c->tm_year
-            << '-' << std::setw (2) << std::setfill ('0') << loc_c->tm_mon
-            << '-' << std::setw (2) << std::setfill ('0') << loc_c->tm_mday
-            << ' ' << std::setw (2) << std::setfill ('0') << loc_c->tm_hour
-            << ':' << std::setw (2) << std::setfill ('0') << loc_c->tm_min
-            << ':' << std::setw (2) << std::setfill ('0') << loc_c->tm_sec
-        << "] ";
-    return logfile;
-}
-
-//--------------------------------------------------------------------------------------------------
-
-void
-maptrack_version (int* maj, int* min, int* patch, const char** timestamp)
-{
-    constexpr std::array<int, 3> ver = {
-#include "../VERSION"
-    };
-    if (maj) *maj = ver[0];
-    if (min) *min = ver[1];
-    if (patch) *patch = ver[2];
-    if (timestamp) *timestamp = MAPTRACK_TIMESTAMP; //"2019-04-15T08:37:11.419416+00:00"
-}
-
 //--------------------------------------------------------------------------------------------------
 
 bool
-dispatch_journal (std::string msg)
+dispatch_skse_message (void* data, std::size_t size, char const* target, int version)
 {
-    if (msg.empty ())
-        return false;
-
-    return messages->Dispatch (plugin, 1,
-                const_cast<char*> (msg.c_str ()), std::strlen (msg.c_str ()), "sse-journal");
+    return data && size > 0 && messages->Dispatch (
+            plugin, version, reinterpret_cast<char*> (data), size, target);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -130,7 +69,7 @@ handle_sseimgui_message (SKSEMessagingInterface::Message* m)
 {
     if (m->type != SSEIMGUI_API_VERSION)
     {
-        log () << "Unsupported SSEIMGUI interface v" << m->type
+        log () << "Unsupported SSE-ImGui interface v" << m->type
                << " (it is not v" << SSEIMGUI_API_VERSION
                 << "). Bailing out." << std::endl;
         return;
@@ -147,16 +86,17 @@ handle_sseimgui_message (SKSEMessagingInterface::Message* m)
     }
 
     imgui = sseimgui.make_imgui_api ();
-    log () << "Accepted SSEIMGUI interface v" << SSEIMGUI_API_VERSION << std::endl;
+    log () << "Accepted SSE-ImGui interface v" << SSEIMGUI_API_VERSION << std::endl;
 
     extern bool setup ();
     if (!setup ())
     {
-        log () << "Unable to initialize SSE-MapTrack" << std::endl;
+        log () << "Unable to initialize " << plugin_name () << std::endl;
         return;
     }
 
-    extern void render (int); sseimgui.render_listener (&render, 0);
+    extern void render (int);
+    sseimgui.render_listener (&render, 0);
     log () << "All done." << std::endl;
 }
 
@@ -198,8 +138,8 @@ extern "C" __declspec(dllexport) bool SSEIMGUI_CCONV
 SKSEPlugin_Query (SKSEInterface const* skse, PluginInfo* info)
 {
     info->infoVersion = PluginInfo::kInfoVersion;
-    info->name = "sse-maptrack";
-    maptrack_version ((int*) &info->version, nullptr, nullptr, nullptr);
+    info->name = plugin_name ().c_str ();
+    plugin_version ((int*) &info->version, nullptr, nullptr, nullptr);
 
     plugin = skse->GetPluginHandle ();
 
@@ -216,15 +156,16 @@ SKSEPlugin_Query (SKSEInterface const* skse, PluginInfo* info)
 extern "C" __declspec(dllexport) bool SSEIMGUI_CCONV
 SKSEPlugin_Load (SKSEInterface const* skse)
 {
-    open_log ();
+    open_log (plugin_name ());
 
     messages = (SKSEMessagingInterface*) skse->QueryInterface (kInterface_Messaging);
     messages->RegisterListener (plugin, "SKSE", handle_skse_message);
 
     int a, m, p;
     const char* b;
-    maptrack_version (&a, &m, &p, &b);
-    log () << "SSE-Map "<< a <<'.'<< m <<'.'<< p <<" ("<< b <<')' << std::endl;
+    plugin_version (&a, &m, &p, &b);
+    log () << plugin_name () <<' '<< a <<'.'<< m <<'.'<< p <<" ("<< b <<')' << std::endl;
+
     return true;
 }
 
