@@ -170,29 +170,26 @@ struct icon_t
 
 //--------------------------------------------------------------------------------------------------
 
-/// As reported by player position (xyz) and current game time (t)
-typedef glm::vec4 trackpoint_t;
-
 /// Most important stuff for the current running instance
 struct maptrack_t
 {
-    image_t map;
     font_t font;
-    glm::vec2 scale, offset; ///< For conversion between texture map and world coords
+
+    image_t map;
+    float scale, iscale;
+    glm::vec2 offset;
 
     inline glm::vec2 map_to_game (glm::vec2 const& p) const
     {
-        auto g = p - offset;
-        return glm::vec2 { g.x / scale.x, -g.y / scale.y };
+        auto g = p - offset; return iscale * glm::vec2 { g.x, -g.y };
     }
     inline glm::vec2 map_to_game (float xy) const
     {
-        float mid = (scale.x + scale.y) * .5f;    /// Reduce deformations due to diferent XY scale
-        return glm::vec2 { xy / mid, -xy / mid };
+        return iscale * glm::vec2 { xy, -xy };
     }
     inline glm::vec2 game_to_map (glm::vec2 const& p) const
     {
-        return offset + glm::vec2 { p.x * scale.x, -p.y * scale.y };
+        return offset + scale * glm::vec2 { p.x, -p.y };
     }
 
     icon_atlas_t icon_atlas;
@@ -218,6 +215,14 @@ struct maptrack_t
     struct {
         bool enabled;
         int resolution;
+        std::vector<float> vals; ///< Accumulated time in each cell
+        float vlo, vhi;
+        float alpha;
+    } tmap;                      ///< Time map
+
+    struct {
+        bool enabled;
+        int resolution;
         int discover;
         float player_alpha, default_alpha, tracked_alpha;
     } fow;                      ///< Fog of War
@@ -229,11 +234,18 @@ struct maptrack_t
         float scale;
     } cursor_info;              ///< Stuff like world position under the cursor and map ratio
 
-    /// Heavy scenario: 60 seconds by 60 minutes by 150 game hours = 540k elements
+    /// Heavy scenario: 60 seconds by 60 minutes by 150 game hours = 540k elements (tested 100k).
     track_t track;
 };
 
+//--------------------------------------------------------------------------------------------------
+
+// maptrack.cpp
+
 extern maptrack_t maptrack;
+
+/// Resets and updates the whole #maptrack.tmap
+void reset_time_map (track_t::const_iterator begin, track_t::const_iterator end);
 
 //--------------------------------------------------------------------------------------------------
 

@@ -53,6 +53,10 @@
 
 //--------------------------------------------------------------------------------------------------
 
+inline constexpr float max_float =  16'777'216.f,   ///< Some sane limits, because:
+                       min_float = -16'777'216.f;   ///< This turns to zero if min limit values
+inline constexpr float nan_float = std::numeric_limits<float>::quiet_NaN ();
+
 struct track_point
 {
     glm::vec3 p;    ///< XYZ position in game space
@@ -105,30 +109,31 @@ public:
     {
         auto size = static_cast<std::uint32_t> (values.size ());
         os.write (reinterpret_cast<const char*> (&size), sizeof (size));
-        os.write (reinterpret_cast<const char*> (values.data ()), size * sizeof (track_point));
+        for (auto const& p: values)
+        {
+            glm::vec4 v (p.p.x, p.p.y, p.p.z, p.t);
+            os.write (reinterpret_cast<const char*> (&v), sizeof (v));
+        }
     }
 
     /// Counterpart of #save_binary()
     template<class IStream>
-    void load_binary (IStream& is, std::array<int, 3> const& ver)
+    void load_binary (IStream& is)
     {
         std::uint32_t size = 0;
         is.read (reinterpret_cast<char*> (&size), sizeof (size));
         values.resize (size);
-        if (ver[0] <= 1 && ver[1] < 5) // Before 1.5 distance was not serialized
+
+        glm::vec3 g (0,0,0);
+        for (auto& v: values)
         {
-            glm::vec3 g {0};
-            for (std::uint32_t i = 0; i < size; ++i)
-            {
-                glm::vec4 p;
-                is.read (reinterpret_cast<char*> (&p), sizeof (glm::vec4));
-                values[i] = track_point { p.xyz (), p.w, glm::distance (p.xyz (), g) };
-                g = p.xyz ();
-            }
-            if (size) values.front ().d = 0;
+            glm::vec4 p;
+            is.read (reinterpret_cast<char*> (&p), sizeof (glm::vec4));
+            v = track_point { p.xyz (), p.w, glm::distance (p.xyz (), g) };
+            g = p.xyz ();
         }
-        else
-            is.read (reinterpret_cast<char*> (values.data ()), size * sizeof (track_point));
+        if (size) values.front ().d = 0;
+
         update_lohi ();
         invalidate_time_range ();
     }
@@ -150,41 +155,55 @@ public:
                         values.end ());
                 update_lohi ();
             }
+
             if (d = glm::distance (p, values.back ().p); min_distance < d)
                values.push_back (track_point {});
+            else if (d = 0; values.size () > 1)
+                d = glm::distance (p, values[values.size () - 2].p);
+
         } else values.push_back (track_point {});
 
         values.back () = track_point { p, t, d };
         update_lohi (p);
-        invalidate_time_range ();
     }
 
     /// Quick access into subrange of tracked points between a given time range
-    std::pair<const_iterator, const_iterator>
-    time_range (float t_start, float t_end, bool& updated)
+    std::tuple<bool, bool, const_iterator, const_iterator, const_iterator>
+    pull_track_range (float t_start, float t_end)
     {
         Expects (std::isfinite (t_start) && std::isfinite (t_end) && t_start <= t_end);
-        updated = false;
+
+        bool changed = false;
+        bool appends = true;
+        std::size_t prev_end = time_end_ndx;
 
         if (time_start != t_start)
         {
-            updated = true;
+            changed = true;
+            appends = false;
             time_start = t_start;
-            time_start_it = std::lower_bound (
+            time_start_ndx = std::lower_bound (
                     values.cbegin (), values.cend (), time_start,
-                    [] (auto const& p, float t) { return p.t < t; });
+                    [] (auto const& p, float t) { return p.t < t; }) - values.cbegin ();
         }
 
         if (time_end != t_end)
         {
-            updated = true;
+            changed = true;
             time_end = t_end;
-            time_end_it = std::upper_bound (
+            time_end_ndx = std::upper_bound (
                     values.cbegin (), values.cend (), time_end,
-                    [] (float t, auto const& p) { return t < p.t; });
+                    [] (float t, auto const& p) { return t < p.t; }) - values.cbegin ();
         }
 
-        return std::make_pair (time_start_it, time_end_it);
+        appends &= std::exchange (prev_end,
+                std::clamp (prev_end, time_start_ndx, time_end_ndx)) == prev_end;
+
+        return std::make_tuple (
+                changed, appends,
+                values.cbegin () + time_start_ndx,
+                values.cbegin () + prev_end,
+                values.cbegin () + time_end_ndx);
     }
 
     static inline double compute_length (const_iterator first, const_iterator last)
@@ -197,20 +216,16 @@ public:
 
 private:
 
-    static constexpr float max_float =  16'777'216.f,   ///< Some sane limits, because:
-                           min_float = -16'777'216.f;   ///< This turns to zero if min limit values
-    static constexpr float nan_float = std::numeric_limits<float>::quiet_NaN ();
-
     std::vector<track_point> values;
     float min_distance;
     float time_start, time_end;
-    const_iterator time_start_it, time_end_it, lenfirst_it, lensecond_it;
+    std::size_t time_start_ndx, time_end_ndx;
     glm::vec3 lo, hi;
 
     inline void invalidate_time_range ()
     {
-        time_start    = time_end    = nan_float;
-        time_start_it = time_end_it = values.cend ();
+        time_start     = time_end     = nan_float;
+        time_start_ndx = time_end_ndx = 0;
     }
 
     inline void reset_lohi ()

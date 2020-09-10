@@ -35,8 +35,6 @@
 
 //--------------------------------------------------------------------------------------------------
 
-maptrack_t maptrack = {};
-
 static bool show_settings = false,
             show_menu = false,
             show_track_saveas = false,
@@ -58,8 +56,8 @@ static glm::vec2 player_location { std::numeric_limits<float>::quiet_NaN () };
 
 /// Current subrange of #maptrack.track selected for rendering, GUI controlled.
 static struct {
-    track_t::const_iterator first, second;
-    bool draw_invalidated, length_invalidated;
+    track_t::const_iterator beg, mid, end;
+    bool track_invalidated, summary_invalidated, fow_invalidated, tmap_changed;
 }
 track_range = {};
 
@@ -408,14 +406,14 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
     }
     cached;
 
-    if (!maptrack.track_enabled || track_range.first == track_range.second)
+    if (!maptrack.track_enabled || track_range.beg == track_range.end)
         return;
 
     bool window_moved = (cached.wpos != wpos);
     bool window_resized = (cached.wsz != wsz || cached.uvtl != uvtl || cached.uvbr != uvbr);
 
     // Best case for update.
-    if (window_moved && !window_resized && !track_range.draw_invalidated)
+    if (window_moved && !window_resized && !track_range.track_invalidated)
     {
         auto d = wpos - cached.wpos;
         for (auto& p: cached.uvtrack)
@@ -425,11 +423,11 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
     // Currently, no idea how to speed up on range change only, hence consider full recalc as it
     // is when the window is resized. Gladly, the range is done only once while the map is visible
     // if the player is not on auto-move.
-    else if (window_resized || track_range.draw_invalidated)
+    else if (window_resized || track_range.track_invalidated)
     {
-        cached.uvtrack.resize (std::distance (track_range.first, track_range.second));
+        cached.uvtrack.resize (std::distance (track_range.beg, track_range.end));
         std::transform (
-                track_range.first, track_range.second, cached.uvtrack.begin (),
+                track_range.beg, track_range.end, cached.uvtrack.begin (),
                 map_project (wpos, wsz, uvtl, uvbr));
     }
 
@@ -450,7 +448,52 @@ draw_track (glm::vec2 const& wpos, glm::vec2 const& wsz,
     imgui.ImDrawList_PopClipRect (imgui.igGetWindowDrawList ());
 
     cached.wpos = wpos, cached.wsz = wsz, cached.uvtl = uvtl, cached.uvbr = uvbr;
-    track_range.draw_invalidated = false;
+    track_range.track_invalidated = false;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static void
+render_quads (
+        int resolution, std::vector<std::uint32_t> const& cells,
+        glm::vec2 const& wpos, glm::vec2 const& wsz,
+        glm::vec2 const& uvtl, glm::vec2 const& uvbr)
+{
+    Expects (cells.size () == resolution * resolution);
+
+    auto wdl = imgui.igGetWindowDrawList ();
+    imgui.ImDrawList_PushClipRect (wdl, to_ImVec2 (wpos), to_ImVec2 (wpos + wsz), false);
+    auto old_flags = std::exchange (wdl->Flags, ImDrawListFlags_None);
+
+    map_project const proj (wpos, wsz, uvtl, uvbr);
+    float const step = 1.f / resolution;
+    glm::ivec2 const ctl (glm::floor (uvtl / step));
+    glm::vec2 const tl = glm::vec2 (ctl) * step;
+    glm::vec2 const br = glm::vec2 (glm::ceil (uvbr / step)) * step;
+
+    glm::ivec2 cell = ctl;
+    for (float y = tl.y; y < br.y; y += step, ++cell.y)
+    {
+        cell.x = ctl.x;
+        for (float x = tl.x; x < br.x; x += step, ++cell.x)
+        {
+            std::uint32_t col = 0;
+            if (cell.x >= 0 && cell.x < resolution
+             && cell.y >= 0 && cell.y < resolution)
+            {
+                col = cells[cell.x + cell.y * resolution];
+            }
+            imgui.ImDrawList_AddQuadFilled (wdl,
+                    to_ImVec2 (proj (glm::vec2 (x     , y    ))),
+                    to_ImVec2 (proj (glm::vec2 (x+step, y    ))),
+                    to_ImVec2 (proj (glm::vec2 (x+step, y+step))),
+                    to_ImVec2 (proj (glm::vec2 (x     , y+step))),
+                    col);
+        }
+    }
+
+    wdl->Flags = old_flags;
+    imgui.ImDrawList_PopClipRect (wdl);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -459,27 +502,26 @@ static void
 draw_fog (glm::vec2 const& wpos, glm::vec2 const& wsz,
           glm::vec2 const& uvtl, glm::vec2 const& uvbr)
 {
-    if (!maptrack.fow.enabled || track_range.first == track_range.second)
+    if (!maptrack.fow.enabled || track_range.beg == track_range.end)
         return;
 
     static decltype (maptrack.fow) cached = maptrack.fow;
-    bool const fow_invalidated =
-               cached.resolution != maptrack.fow.resolution
+    bool const update = track_range.fow_invalidated
+            || cached.resolution != maptrack.fow.resolution
             || cached.discover != maptrack.fow.discover
             || cached.default_alpha != maptrack.fow.default_alpha
             || cached.tracked_alpha != maptrack.fow.tracked_alpha;
     cached = maptrack.fow;
 
-    glm::vec2 const step = 1.f / glm::vec2 (maptrack.fow.resolution, maptrack.fow.resolution);
-    map_project const proj (wpos, wsz, uvtl, uvbr);
-
-    static std::vector<char> cells;
-    cells.resize (maptrack.fow.resolution * maptrack.fow.resolution);
+    static std::vector<std::uint32_t> cells;
 
     // Update the fog of war cells, reduces comparision time with the tracks down the rendering
-    if (fow_invalidated || track_range.draw_invalidated)
+    // TODO: Don't fully recompute when only the last track point was added (normal case).
+    if (update)
     {
-        auto update_cells = [&] (int x, int y, char alpha)
+        track_range.fow_invalidated = false;
+
+        auto update_cells = [&] (int x, int y, int a)
         {
             float r2 = maptrack.fow.discover * maptrack.fow.discover;
             for (int dy = -maptrack.fow.discover; dy <= +maptrack.fow.discover; ++dy)
@@ -489,60 +531,80 @@ draw_fog (glm::vec2 const& wpos, glm::vec2 const& wsz,
                      && y+dy >= 0 && y+dy < maptrack.fow.resolution)
                     {
                         if (glm::distance2 (glm::vec2 (x+dx, y+dy), glm::vec2 (x, y)) < r2)
-                            cells[x+dx + (y+dy) * maptrack.fow.resolution] = alpha;
+                            cells[x+dx + (y+dy) * maptrack.fow.resolution] = IM_COL32 (0, 0, 0, a);
                     }
                 }
         };
 
-        char default_alpha = char (glm::clamp (maptrack.fow.default_alpha * 255, 0.f, 255.f));
-        char tracked_alpha = char (glm::clamp (maptrack.fow.tracked_alpha * 255, 0.f, 255.f));
-        char player_alpha = char (glm::clamp (maptrack.fow.player_alpha * 255, 0.f, 255.f));
+        auto default_alpha = std::clamp<int> (maptrack.fow.default_alpha * 255, 0, 255);
+        auto tracked_alpha = std::clamp<int> (maptrack.fow.tracked_alpha * 255, 0, 255);
+        auto player_alpha  = std::clamp<int> (maptrack.fow.player_alpha  * 255, 0, 255);
 
-        std::fill (cells.begin (), cells.end (), default_alpha);
+        cells.resize (maptrack.fow.resolution * maptrack.fow.resolution);
+        std::fill (cells.begin (), cells.end (), IM_COL32 (0, 0, 0, default_alpha));
 
-        for (auto it = track_range.first; it != track_range.second; ++it)
+        for (auto it = track_range.beg; it != track_range.end; ++it)
         {
-            glm::ivec2 cell (maptrack.game_to_map (it->p.xy ()) / step);
+            glm::ivec2 cell (maptrack.game_to_map (it->p.xy ()) * float (maptrack.fow.resolution));
             update_cells (cell.x, cell.y, tracked_alpha);
         }
 
-        glm::ivec2 cell (maptrack.game_to_map (player_location) / step);
+        glm::ivec2 cell (maptrack.game_to_map (player_location) * float (maptrack.fow.resolution));
         update_cells (cell.x, cell.y, player_alpha);
     }
 
-    // Render
+    render_quads (maptrack.fow.resolution, cells, wpos, wsz, uvtl, uvbr);
+}
 
-    auto wdl = imgui.igGetWindowDrawList ();
-    imgui.ImDrawList_PushClipRect (wdl, to_ImVec2 (wpos), to_ImVec2 (wpos + wsz), false);
-    auto old_flags = std::exchange (wdl->Flags, ImDrawListFlags_None);
+//--------------------------------------------------------------------------------------------------
 
-    glm::ivec2 const ctl (glm::floor (uvtl / step));
-    glm::vec2 const tl = glm::vec2 (ctl) * step;
-    glm::vec2 const br = glm::vec2 (glm::ceil (uvbr / step)) * step;
+static void
+draw_tmap (glm::vec2 const& wpos, glm::vec2 const& wsz,
+           glm::vec2 const& uvtl, glm::vec2 const& uvbr)
+{
+    if (!maptrack.tmap.enabled)
+        return;
 
-    glm::ivec2 cell = ctl;
-    for (float y = tl.y; y < br.y; y += step.y, ++cell.y)
+    static struct {
+        int resolution;
+        float alpha;
+    } cache = { -1, -1 };
+
+
+    bool draw_update = false;
+    if (cache.resolution != maptrack.tmap.resolution || track_range.tmap_changed)
     {
-        cell.x = ctl.x;
-        for (float x = tl.x; x < br.x; x += step.x, ++cell.x)
-        {
-            char alpha = 255;
-            if (cell.x >= 0 && cell.x < maptrack.fow.resolution
-             && cell.y >= 0 && cell.y < maptrack.fow.resolution)
-            {
-                alpha = cells[cell.x + cell.y * maptrack.fow.resolution];
-            }
-            imgui.ImDrawList_AddQuadFilled (wdl,
-                    to_ImVec2 (proj (glm::vec2 (x       , y    ))),
-                    to_ImVec2 (proj (glm::vec2 (x+step.x, y    ))),
-                    to_ImVec2 (proj (glm::vec2 (x+step.x, y+step.y))),
-                    to_ImVec2 (proj (glm::vec2 (x       , y+step.y))),
-                    IM_COL32 (0, 0, 0, alpha));
-        }
+        draw_update = true;
+        track_range.tmap_changed = false;
+        reset_time_map (track_range.beg, track_range.end);
     }
 
-    wdl->Flags = old_flags;
-    imgui.ImDrawList_PopClipRect (wdl);
+    static std::vector<std::uint32_t> cells;
+    if (draw_update || cache.alpha != maptrack.tmap.alpha)
+    {
+        cells.resize (maptrack.tmap.resolution * maptrack.tmap.resolution);
+        float idv = 1.f / (maptrack.tmap.vhi - maptrack.tmap.vlo);
+        int alpha = 255 * maptrack.tmap.alpha;
+        std::transform (maptrack.tmap.vals.cbegin (), maptrack.tmap.vals.cend (), cells.begin (),
+                [idv, alpha] (float t)
+        {
+                int r = 0, g = 0, b = 0, a = 0;
+                if (t > std::numeric_limits<float>::epsilon ())
+                {
+                    a = alpha;
+                    float v = idv * (t - maptrack.tmap.vlo);
+                    if      (v <= .25f) b = 255, g = v*5*255;
+                    else if (v <= .50f) g = 255, b = 255 - (v-.25f)*4*255;
+                    else if (v <= .75f) g = 255, r = (v-.5f)*4*255;
+                    else if (v <= 1.0f) r = 255, g = 255 - (v-.75f)*4*255;
+                    else                r = 255;
+                }
+                return IM_COL32 (r, g, b, a);
+        });
+    }
+    cache = { maptrack.tmap.resolution, maptrack.tmap.alpha };
+
+    render_quads (maptrack.tmap.resolution, cells, wpos, wsz, uvtl, uvbr);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -675,6 +737,7 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
         mouse_wheel = io->MouseWheel ? (io->MouseWheel > 0 ? +1 : -1) : 0;
     }
 
+    draw_tmap        (wpos + map_pos, map_size, uvtl, uvbr);
     draw_fog         (wpos + map_pos, map_size, uvtl, uvbr);
     draw_icons       (wpos + map_pos, map_size, uvtl, uvbr, hovered);
     draw_track       (wpos + map_pos, map_size, uvtl, uvbr);
@@ -692,11 +755,15 @@ update_track_range ()
     auto tstart = menu_since_day ? maptrack.since_dayx : track_start2;
     auto tend = maptrack.time_point * (last_recorded_time - tstart) + tstart;
 
-    bool tupdated = false;
-    std::tie (track_range.first, track_range.second)
-        = maptrack.track.time_range (tstart, tend, tupdated);
-    track_range.draw_invalidated |= tupdated;
-    track_range.length_invalidated |= tupdated;
+    auto [chg, app, beg, mid, end] = maptrack.track.pull_track_range (tstart, tend);
+
+    track_range.beg = beg;
+    track_range.mid = mid;
+    track_range.end = end;
+    track_range.track_invalidated |= chg;
+    track_range.fow_invalidated |= chg;
+    track_range.summary_invalidated |= chg;
+    track_range.tmap_changed |= chg;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -932,21 +999,11 @@ draw_settings ()
 {
     if (imgui.igBegin ("SSE MapTrack: Settings", &show_settings, 0))
     {
-        constexpr int cflags = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayHSV
-            | ImGuiColorEditFlags_InputRGB | ImGuiColorEditFlags_PickerHueBar
-            | ImGuiColorEditFlags_AlphaBar;
-
-        imgui.igText ("Default font:");
-        ImVec4 col = imgui.igColorConvertU32ToFloat4 (maptrack.font.color);
-        if (imgui.igColorEdit4 ("Color##Default", (float*) &col, cflags))
-            maptrack.font.color = imgui.igGetColorU32Vec4 (col);
-        imgui.igSliderFloat ("Scale##Default", &maptrack.font.imfont->Scale, .5f, 2.f, "%.2f", 1);
+        render_font_settings (maptrack.font);
 
         imgui.igText ("");
         imgui.igCheckbox ("Map info cursor", &maptrack.cursor_info.enabled);
-        col = imgui.igColorConvertU32ToFloat4 (maptrack.cursor_info.color);
-        if (imgui.igColorEdit4 ("Color##Cursor", (float*) &col, cflags))
-            maptrack.cursor_info.color = imgui.igGetColorU32Vec4 (col);
+        render_color_setting ("Color##Cursor", maptrack.cursor_info.color);
         imgui.igSliderFloat ("Scale##Cursor", &maptrack.cursor_info.scale, .5f, 4.f, "%.2f", 1);
         imgui.igCheckbox ("Map deformation", &maptrack.cursor_info.deformation);
         imgui.igSameLine (0, -1);
@@ -954,16 +1011,12 @@ draw_settings ()
 
         imgui.igText ("");
         imgui.igCheckbox ("Track", &maptrack.track_enabled);
-        col = imgui.igColorConvertU32ToFloat4 (maptrack.track_color);
-        if (imgui.igColorEdit4 ("Color##Track", (float*) &col, cflags))
-            maptrack.track_color = imgui.igGetColorU32Vec4 (col);
+        render_color_setting ("Color##Track", maptrack.track_color);
         imgui.igSliderFloat ("Width##Track", &maptrack.track_width, 1.f, 20.f, "%.1f", 1);
 
         imgui.igText ("");
         imgui.igCheckbox ("Player circle", &maptrack.player.enabled);
-        col = imgui.igColorConvertU32ToFloat4 (maptrack.player.color);
-        if (imgui.igColorEdit4 ("Color##Player", (float*) &col, cflags))
-            maptrack.player.color = imgui.igGetColorU32Vec4 (col);
+        render_color_setting ("Color##Player", maptrack.player.color);
         imgui.igSliderFloat ("Size##Player", &maptrack.player.size, 1.f, 20.f, "%.1f", 1);
 
         imgui.igText ("");
@@ -972,6 +1025,11 @@ draw_settings ()
         imgui.igSliderInt ("Discover radius##FoW", &maptrack.fow.discover, 1, 8, "%d");
         imgui.igSliderFloat ("Default alpha##FoW", &maptrack.fow.default_alpha, 0, 1, "%.2f", 1);
         imgui.igSliderFloat ("Tracked alpha##FoW", &maptrack.fow.tracked_alpha, 0, 1, "%.2f", 1);
+
+        imgui.igText ("");
+        imgui.igCheckbox ("Time map", &maptrack.tmap.enabled);
+        imgui.igSliderInt ("Resolution##TMap", &maptrack.tmap.resolution, 32, 256, "%d");
+        imgui.igSliderFloat ("Alpha##TMap", &maptrack.tmap.alpha, 0, 1, "%.2f", 1);
 
         imgui.igText ("");
         if (imgui.igButton ("Save settings", ImVec2 {}))
@@ -1179,8 +1237,8 @@ draw_track_summary ()
     if (imgui.igBegin ("SSE MapTrack: Track summary", &show_track_summary, 0))
     {
         static double len = 0;
-        if (track_range.length_invalidated)
-            len = track_t::compute_length (track_range.first, track_range.second);
+        if (track_range.summary_invalidated)
+            len = track_t::compute_length (track_range.beg, track_range.end);
         imgui.igText ("Length: %.0f", len);
 
         auto bb = maptrack.track.bounding_box ();
@@ -1193,24 +1251,24 @@ draw_track_summary ()
         auto name_asz = imgui.igCalcTextSize (name_a, nullptr, false, -1.f);
         avail_sz.x -= name_asz.x;
         avail_sz.y /= 2; avail_sz.y -= 2*name_asz.y;
-        imgui.igPlotLinesFnPtr (name_a, trackpoint_height, &track_range.first,
-                int (std::distance (track_range.first, track_range.second)), 0, nullptr,
+        imgui.igPlotLinesFnPtr (name_a, trackpoint_height, &track_range.beg,
+                int (std::distance (track_range.beg, track_range.end)), 0, nullptr,
                 bb.first.z, bb.second.z, avail_sz);
 
         // Move to track_t?
         static float max_speed = 0.f, min_speed = 0.f;
         static std::vector<float> speeds;
-        if (track_range.length_invalidated)
+        if (track_range.summary_invalidated)
         {
             speeds.clear ();
             min_speed = max_speed = 0;
-            auto n = std::distance (track_range.first, track_range.second);
+            auto n = std::distance (track_range.beg, track_range.end);
             if (n > 1)
             {
-                min_speed = 16'777'216.f;
+                min_speed = max_float;
                 speeds.resize (n - 1);
                 auto out = speeds.begin ();
-                for (auto i = std::next (track_range.first); i != track_range.second; ++i, ++out)
+                for (auto i = std::next (track_range.beg); i != track_range.end; ++i, ++out)
                 {
                     auto i0 = std::prev (i);
                     int h, h0, m, m0, s, s0;
@@ -1229,7 +1287,7 @@ draw_track_summary ()
                 speeds.data (), int (speeds.size ()), 0, nullptr,
                 min_speed, max_speed, avail_sz);
 
-        track_range.length_invalidated = false;
+        track_range.summary_invalidated = false;
     }
     imgui.igEnd ();
 }

@@ -178,7 +178,7 @@ save_map_settings ()
             { "tint", hex_string (maptrack.map.tint) },
             { "uv", { maptrack.map.uv[0], maptrack.map.uv[1],
                       maptrack.map.uv[2], maptrack.map.uv[3] }},
-            { "scale", { maptrack.scale[0], maptrack.scale[1] }},
+            { "scale", { maptrack.scale, maptrack.scale }}, // compatibility
             { "offset", { maptrack.offset[0], maptrack.offset[1] }}
         }}
     };
@@ -195,7 +195,8 @@ load_map_settings ()
     maptrack.map = image_t {};
     maptrack.map.uv = { 0, 0, 1, .711f };
     maptrack.offset = { .4766f, .3760f };
-    maptrack.scale = { 1.f/(2048*205), 1.f/(2048*205) };
+    maptrack.scale = 1.f/(2048*205);
+    maptrack.iscale = 1.f / maptrack.scale;
     maptrack.map.file = (plugin_directory () / "map.dds").string ();
 
     if (json.contains ("map"))
@@ -203,10 +204,10 @@ load_map_settings ()
         auto const& jmap = json.at ("map");
         auto it = jmap.at ("uv").begin ();
         for (float& v: maptrack.map.uv) v = *it++;
-        it = jmap.at ("scale").begin ();
-        for (float& v: maptrack.scale) v = *it++;
         it = jmap.at ("offset").begin ();
         for (float& v: maptrack.offset) v = *it++;
+        maptrack.scale = *jmap.at ("scale").begin ();
+        maptrack.iscale = 1.f / maptrack.scale;
         maptrack.map.tint = std::stoull (jmap.at ("tint").get<std::string> (), nullptr, 0);
         maptrack.map.file = jmap.value ("file", maptrack.map.file);
     }
@@ -256,6 +257,10 @@ save_settings ()
                 { "discover", maptrack.fow.discover },
                 { "default alpha", maptrack.fow.default_alpha },
                 { "tracked alpha", maptrack.fow.tracked_alpha },
+            }},
+            { "Time map", {
+                { "enabled", maptrack.tmap.enabled },
+                { "resolution", maptrack.tmap.resolution },
             }},
             { "update period", maptrack.update_period },
             { "min distance", maptrack.min_distance },
@@ -325,7 +330,7 @@ load_settings ()
             fi >> json;
 
         extern const char* font_inconsolata;
-        maptrack.font.name = "default";
+        maptrack.font.name = "Default";
         maptrack.font.scale = 1.f;
         maptrack.font.size = 18.f;
         maptrack.font.color = IM_COL32_WHITE;
@@ -378,6 +383,17 @@ load_settings ()
             maptrack.fow.discover = j.value ("discover", maptrack.fow.discover);
             maptrack.fow.default_alpha = j.value ("default alpha", maptrack.fow.default_alpha);
             maptrack.fow.tracked_alpha = j.value ("tracked alpha", maptrack.fow.tracked_alpha);
+        }
+
+        maptrack.tmap.enabled = false;
+        maptrack.tmap.resolution = 128;
+        maptrack.tmap.alpha = 0.5f;
+        if (json.contains ("Time map"))
+        {
+            auto const& j = json.at ("Time map");
+            maptrack.tmap.enabled = j.value ("enabled", maptrack.tmap.enabled);
+            maptrack.tmap.resolution = j.value ("resolution", maptrack.tmap.resolution);
+            maptrack.tmap.alpha = j.value ("alpha", maptrack.tmap.alpha);
         }
 
         maptrack.cursor_info.enabled = true;
@@ -466,10 +482,10 @@ load_track (std::filesystem::path const& file)
             log () << "Unable to open " << file << " for reading." << std::endl;
             return false;
         }
-        auto maj = read_binary<std::int32_t> (f);
-        auto min = read_binary<std::int32_t> (f);
-        auto pat = read_binary<std::int32_t> (f);
-        maptrack.track.load_binary (f, { maj, min, pat });
+        read_binary<std::int32_t> (f);
+        read_binary<std::int32_t> (f);
+        read_binary<std::int32_t> (f);
+        maptrack.track.load_binary (f);
     }
     catch (std::exception const& ex)
     {

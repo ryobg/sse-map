@@ -29,11 +29,23 @@
 
 //--------------------------------------------------------------------------------------------------
 
+maptrack_t maptrack = {};
+
+//--------------------------------------------------------------------------------------------------
+
 std::string const&
 plugin_name ()
 {
     static std::string v = "sse-maptrack";
     return v;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static inline bool
+rectangle_contains_point (glm::vec2 const& tl, glm::vec2 const& br, glm::vec2 const& p)
+{
+    return (tl.x <= p.x) && (tl.y <= p.y) && (br.x >= p.x) && (br.y >= p.y);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -60,15 +72,8 @@ segments_intersection (
     out.y = a1*c2 - a2*c1;
     out /= delta;
 
-    return true;
-}
-
-//--------------------------------------------------------------------------------------------------
-
-static inline bool
-rectangle_contains_point (glm::vec2 const& tl, glm::vec2 const& br, glm::vec2 const& p)
-{
-    return (tl.x <= p.x) && (tl.y <= p.y) && (br.x >= p.x) && (br.y >= p.y);
+    // Exploit that the 2nd segment is the line we care about. The 1st is 1 of the 4 rect lines.
+    return rectangle_contains_point (glm::min (pa2, pb2), glm::max (pa2, pb2), out);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -96,6 +101,62 @@ rectange_contained_segment (
     if (i < 2) i += segments_intersection (bl, tl, a, b, *out[i]);
 
     return i == 2; // else all outside
+}
+
+//--------------------------------------------------------------------------------------------------
+
+static void
+accumulate_time_map (track_point const& prev, track_point const& next)
+{
+    auto rsz = 1.f / maptrack.tmap.resolution;
+    auto ga = maptrack.game_to_map (prev.p.xy ());
+    auto gb = maptrack.game_to_map (next.p.xy ());
+    auto id = 1.f / (next.d * maptrack.scale);
+    auto dt = next.t - prev.t;
+
+
+    // Bounding box, top-left and bottom-right 2d integers to index within the destination array
+    glm::ivec2 bbtli (glm::floor (glm::min (ga, gb) / rsz));
+    glm::ivec2 bbbri (glm::ceil  (glm::max (ga, gb) / rsz));
+
+    bbtli = glm::max (bbtli, glm::ivec2 {0, 0});        ///< Clamp in case a point is outside map
+    bbbri = glm::min (bbbri, maptrack.tmap.resolution);
+
+    // Iterate over all rects inside the ab segment bounding box
+    for (glm::ivec2 i = bbtli; i.y < bbbri.y; ++i.y)
+        for (i.x = bbtli.x; i.x < bbbri.x; ++i.x)
+    {
+        glm::vec2 ia, ib;
+        glm::vec2 tl = glm::vec2 (i) * rsz;
+        float& v = maptrack.tmap.vals[i.x + i.y * maptrack.tmap.resolution];
+
+        if (rectange_contained_segment (
+                    tl, glm::vec2 (tl.x + rsz, tl.y), glm::vec2 (tl.x, tl.y + rsz), tl + rsz,
+                    ga, gb, ia, ib))
+        {
+            // Intersection length is percentage of the time duration represented by the
+            // checked segment.
+            auto d = glm::distance (ia, ib);
+            v += d * id * dt;
+            maptrack.tmap.vlo = std::min (maptrack.tmap.vlo, v);
+            maptrack.tmap.vhi = std::max (maptrack.tmap.vhi, v);
+        }
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void
+reset_time_map (track_t::const_iterator begin, track_t::const_iterator end)
+{
+    maptrack.tmap.vlo = max_float;
+    maptrack.tmap.vhi = min_float;
+
+    maptrack.tmap.vals.resize (maptrack.tmap.resolution * maptrack.tmap.resolution);
+    std::fill (maptrack.tmap.vals.begin (), maptrack.tmap.vals.end (), 0.f);
+
+    std::adjacent_find (begin, end,
+            [] (auto const& a, auto const& b) { accumulate_time_map (a, b); return false; });
 }
 
 //--------------------------------------------------------------------------------------------------
