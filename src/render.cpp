@@ -619,8 +619,8 @@ draw_cursor_info (glm::vec2 const& wpos, glm::vec2 const& wsz,
 
     glm::vec2 const mouse_pos = to_vec2 (imgui.igGetIO ()->MousePos);
 
-    static std::array<char, 64> buff;
-    static char *p = buff.data (), *npos = buff.data (), *psz = buff.data ();
+    static std::array<char, 128> buff;
+    static std::array<char*, 2+2> p = { &buff[0], &buff[0], &buff[0], &buff[0] };
 
     static glm::vec2 cached_mouse_pos (-1, -1);
     if (mouse_pos != cached_mouse_pos)
@@ -628,37 +628,55 @@ draw_cursor_info (glm::vec2 const& wpos, glm::vec2 const& wsz,
         cached_mouse_pos = mouse_pos;
 
         map_project const proj (wpos, wsz, uvtl, uvbr);
-        auto gpos = maptrack.map_to_game (proj.screen_to_map (mouse_pos));
+        auto mpos = proj.screen_to_map (mouse_pos);
+        auto gpos = maptrack.map_to_game (mpos);
 
-        npos = psz = p = buff.data ();
         char* n = buff.data () + buff.size ();
-        p = std::to_chars (p, n, int (gpos.x)).ptr; *p++ = ' ';
-        p = std::to_chars (p, n, int (gpos.y)).ptr; *p = 0;
-        npos = p;
-        psz = ++p;
+        p[1] = p[0] = buff.data ();
+
+        p[1] = std::to_chars (p[1], n, int (gpos.x)).ptr; *p[1]++ = ' ';
+        p[1] = std::to_chars (p[1], n, int (gpos.y)).ptr;
+        std::fill (p.begin () + 2, p.end (), p[1]);
+
         if (maptrack.cursor_info.deformation)
         {
             auto usz = (uvbr - uvtl);
             float ratio = (usz.x / usz.y) / (wsz.x / wsz.y);
-            p = std::to_chars (p, n, int (1000 * ratio)).ptr; *p = 0;
+            p[2] = std::to_chars (p[2], n, int (1000 * ratio)).ptr;
+            std::fill (p.begin () + 3, p.end (), p[2]);
+        }
+
+        if (maptrack.tmap.enabled)
+        {
+            int r = maptrack.tmap.resolution;
+            glm::ivec2 i (mpos * float (r));
+            if (i.x >= 0 && i.y >= 0 && i.x < r && i.y < r)
+            {
+                float& v = maptrack.tmap.vals[i.x + i.y * r];
+                int h, m, s, d = v;
+                game_time_hms (v, h, m, s);
+                if (d) { p[3] = std::to_chars (p[3], n, d).ptr; *p[3]++ = 'd'; *p[3]++ = ' '; }
+                if (h) { p[3] = std::to_chars (p[3], n, h).ptr; *p[3]++ = 'h'; *p[3]++ = ' '; }
+                if (m) { p[3] = std::to_chars (p[3], n, m).ptr; *p[3]++ = 'm'; *p[3]++ = ' '; }
+                if (s) { p[3] = std::to_chars (p[3], n, s).ptr; *p[3]++ = 's'; *p[3]++ = ' '; }
+            }
         }
     }
 
     ImVec2 nwpos = to_ImVec2 (wpos);
     float fsz = maptrack.font.imfont->FontSize * maptrack.cursor_info.scale;
-    if (buff.data () != npos)
+
+    std::adjacent_find (p.cbegin (), p.cend (), [fsz, &nwpos] (char const* b, char const* e)
     {
-        imgui.ImDrawList_AddTextFontPtr (imgui.igGetWindowDrawList (),
-                maptrack.font.imfont, fsz, nwpos,
-                maptrack.cursor_info.color, buff.data (), npos, 0, nullptr);
-        nwpos.y += fsz * 1.5f;
-    }
-    if (psz != p)
-    {
-        imgui.ImDrawList_AddTextFontPtr (imgui.igGetWindowDrawList (),
-                maptrack.font.imfont, fsz, nwpos,
-                maptrack.cursor_info.color, psz, p, 0, nullptr);
-    }
+        if (b != e)
+        {
+            imgui.ImDrawList_AddTextFontPtr (imgui.igGetWindowDrawList (),
+                    maptrack.font.imfont, fsz, nwpos,
+                    maptrack.cursor_info.color, b, e, 0, nullptr);
+            nwpos.y += fsz * 1.5f;
+        }
+        return false;
+    });
 }
 
 //--------------------------------------------------------------------------------------------------
