@@ -76,6 +76,32 @@ extern sseimgui_api sseimgui;
 
 //--------------------------------------------------------------------------------------------------
 
+static inline glm::vec2
+imgui_window_pos ()
+{
+    ImVec2 v;
+    imgui.igGetWindowPos (&v);
+    return to_vec2 (v);
+}
+
+static inline glm::vec2
+imgui_cursor_pos ()
+{
+    ImVec2 v;
+    imgui.igGetCursorPos (&v);
+    return to_vec2 (v);
+}
+
+static inline glm::vec2
+imgui_content_region_avail ()
+{
+    ImVec2 v;
+    imgui.igGetContentRegionAvail (&v);
+    return to_vec2 (v);
+}
+
+//--------------------------------------------------------------------------------------------------
+
 // fileio.cpp
 
 bool save_settings ();

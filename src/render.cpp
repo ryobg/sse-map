@@ -166,7 +166,7 @@ setup ()
         return false;
     if (!setup_variables ())
         return false;
-    top_window = (HWND) imgui.igGetIO ()->ImeWindowHandle;
+    top_window = (HWND) imgui.igGetMainViewport ()->PlatformHandle;
     if (!top_window)
         return false;
     if (!update_timer ())
@@ -326,7 +326,7 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
             cached.drawlist.push_back (make_image (i, maptrack.icons.size () - 1));
         }
         ico->text.resize (max_text);
-        imgui.igOpenPopup ("Setup icon");
+        imgui.igOpenPopup_Str ("Setup icon", 0);
     }
 
     if (imgui.igBeginPopup ("Setup icon", 0))
@@ -336,7 +336,7 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
         imgui.igInputText ("Small text##icon", &ico->text[0], max_text, 0, nullptr, nullptr);
 
         int user_index = ico->index + 1;
-        if (imgui.igDragInt (name.c_str (), &user_index, 1, 1, maptrack.icon_atlas.icon_count,"%d"))
+        if (imgui.igDragInt (name.c_str (), &user_index, 1, 1, maptrack.icon_atlas.icon_count, "%d", 0))
         {
             cached.ico_updated = true;
             ico->index = glm::clamp (1, user_index, int (maptrack.icon_atlas.icon_count)) - 1;
@@ -349,11 +349,12 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
             | ImGuiColorEditFlags_InputRGB | ImGuiColorEditFlags_PickerHueBar
             | ImGuiColorEditFlags_AlphaBar;
 
-        ImVec4 color = imgui.igColorConvertU32ToFloat4 (ico->tint);
+        ImVec4 color;
+        imgui.igColorConvertU32ToFloat4 (&color, ico->tint);
         if (imgui.igColorEdit4 ("Tint##icon", (float*) &color, colflags))
         {
             cached.ico_updated = true;
-            ico->tint = imgui.igGetColorU32Vec4 (color);
+            ico->tint = imgui.igGetColorU32_Vec4 (color);
         }
 
         float scale = (ico->br - ico->tl).x * maptrack.icon_atlas.icon_size;
@@ -374,7 +375,7 @@ draw_icons (glm::vec2 const& wpos, glm::vec2 const& wsz,
 
         imgui.igSameLine (0, -1);
         if (imgui.igButton ("Delete", ImVec2 {}))
-            imgui.igOpenPopup ("Delete icon?");
+            imgui.igOpenPopup_Str ("Delete icon?", 0);
         if (imgui.igBeginPopup ("Delete icon?", 0))
         {
             if (imgui.igButton ("Confirm##icon", ImVec2 {}))
@@ -585,14 +586,14 @@ draw_cursor_info (glm::vec2 const& wpos, glm::vec2 const& wsz,
     float fsz = maptrack.font.imfont->FontSize * maptrack.cursor_info.scale;
     if (buff.data () != npos)
     {
-        imgui.ImDrawList_AddTextFontPtr (imgui.igGetWindowDrawList (),
+        imgui.ImDrawList_AddText_FontPtr (imgui.igGetWindowDrawList (),
                 maptrack.font.imfont, fsz, nwpos,
                 maptrack.cursor_info.color, buff.data (), npos, 0, nullptr);
         nwpos.y += fsz * 1.5f;
     }
     if (psz != p)
     {
-        imgui.ImDrawList_AddTextFontPtr (imgui.igGetWindowDrawList (),
+        imgui.ImDrawList_AddText_FontPtr (imgui.igGetWindowDrawList (),
                 maptrack.font.imfont, fsz, nwpos,
                 maptrack.cursor_info.color, psz, p, 0, nullptr);
     }
@@ -614,7 +615,7 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
     static glm::vec2 last_mouse_pos = {-1,-1};
     constexpr float zoom_factor = .01f;
     ImGuiIO* io = imgui.igGetIO ();
-    auto wpos = to_vec2 (imgui.igGetWindowPos ());
+    auto wpos = imgui_window_pos ();
 
     glm::vec2 backup_uvtl = uvtl, backup_uvbr = uvbr;
     if (hovered)
@@ -661,7 +662,7 @@ draw_map (glm::vec2 const& map_pos, glm::vec2 const& map_size)
         }
     }
 
-    imgui.igInvisibleButton ("Map", to_ImVec2 (map_size));
+    imgui.igInvisibleButton ("Map", to_ImVec2 (map_size), 0);
     imgui.ImDrawList_AddImage (imgui.igGetWindowDrawList (), maptrack.map.ref,
             to_ImVec2 (wpos + map_pos), to_ImVec2 (wpos + map_pos + map_size),
             to_ImVec2 (uvtl), to_ImVec2 (uvbr), IM_COL32_WHITE);
@@ -706,37 +707,38 @@ render (int active)
     if (!active)
         return;
 
-    imgui.igPushStyleColor (ImGuiCol_FrameBg,       ImVec4 {0, 0, 0, 0});
-    imgui.igPushStyleColor (ImGuiCol_Button,        ImVec4 {0, 0, 0, 0});
-    imgui.igPushStyleColor (ImGuiCol_TitleBgActive, ImVec4 {0, 0, 0, 1.f});
-    imgui.igPushStyleColor (ImGuiCol_CheckMark,     ImVec4 {.61f, .61f, .61f, 1.f});
-    imgui.igPushStyleColor (ImGuiCol_SliderGrab,    ImVec4 {.61f, .61f, .61f, 1.f});
-    imgui.igPushStyleColor (ImGuiCol_ResizeGrip,    ImVec4 {.61f, .61f, .61f, 1.f});
-    imgui.igPushStyleColor (ImGuiCol_TextSelectedBg,ImVec4 {.61f, .61f, .61f, 1.f});
-    imgui.igPushStyleColor (ImGuiCol_ButtonHovered ,ImVec4 {0.26f, 0.59f, 0.98f, 0.4f});
-    imgui.igPushStyleColor (ImGuiCol_FrameBgHovered,ImVec4 {0.26f, 0.59f, 0.98f, 0.4f});
+    imgui.igPushStyleColor_Vec4 (ImGuiCol_FrameBg,        ImVec4 {0, 0, 0, 0});
+    imgui.igPushStyleColor_Vec4 (ImGuiCol_Button,         ImVec4 {0, 0, 0, 0});
+    imgui.igPushStyleColor_Vec4 (ImGuiCol_TitleBgActive,  ImVec4 {0, 0, 0, 1.f});
+    imgui.igPushStyleColor_Vec4 (ImGuiCol_CheckMark,      ImVec4 {.61f, .61f, .61f, 1.f});
+    imgui.igPushStyleColor_Vec4 (ImGuiCol_SliderGrab,     ImVec4 {.61f, .61f, .61f, 1.f});
+    imgui.igPushStyleColor_Vec4 (ImGuiCol_ResizeGrip,     ImVec4 {.61f, .61f, .61f, 1.f});
+    imgui.igPushStyleColor_Vec4 (ImGuiCol_TextSelectedBg, ImVec4 {.61f, .61f, .61f, 1.f});
+    imgui.igPushStyleColor_Vec4 (ImGuiCol_ButtonHovered , ImVec4 {0.26f, 0.59f, 0.98f, 0.4f});
+    imgui.igPushStyleColor_Vec4 (ImGuiCol_FrameBgHovered, ImVec4 {0.26f, 0.59f, 0.98f, 0.4f});
 
     imgui.igPushFont (maptrack.font.imfont);
 
-    imgui.igPushStyleVarVec2 (ImGuiStyleVar_ItemSpacing, ImVec2 {5, 10});
-    imgui.igPushStyleVarVec2 (ImGuiStyleVar_FramePadding, ImVec2 {5, 5});
-    imgui.igPushStyleVarFloat (ImGuiStyleVar_FrameBorderSize, 1.f);
-    imgui.igPushStyleVarFloat (ImGuiStyleVar_WindowBorderSize, 0.f);
+    imgui.igPushStyleVar_Vec2 (ImGuiStyleVar_ItemSpacing, ImVec2 {5, 10});
+    imgui.igPushStyleVar_Vec2 (ImGuiStyleVar_FramePadding, ImVec2 {5, 5});
+    imgui.igPushStyleVar_Float (ImGuiStyleVar_FrameBorderSize, 1.f);
+    imgui.igPushStyleVar_Float (ImGuiStyleVar_WindowBorderSize, 0.f);
 
     imgui.igSetNextWindowSize (ImVec2 { 800, 600 }, ImGuiCond_FirstUseEver);
     if (imgui.igBegin ("SSE MapTrack", nullptr, ImGuiWindowFlags_NoScrollbar))
     {
         update_track_range ();
 
-        auto dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
-        auto mapsz = to_vec2 (imgui.igGetContentRegionAvail ());
+        ImVec2 dragday_size;
+        imgui.igCalcTextSize (&dragday_size, "1345", nullptr, false, -1.f);
+        auto mapsz = imgui_content_region_avail ();
         // ~48 chars based on max text content widgets below:
         mapsz.x -= dragday_size.x * (show_menu ? 12 : 1);
 
         imgui.igBeginGroup ();
         imgui.igSetNextItemWidth (mapsz.x);
         imgui.igSliderFloat ("##Time", &maptrack.time_point, 0, 1, "", 1);
-        auto mappos = to_vec2 (imgui.igGetCursorPos ());
+        auto mappos = imgui_cursor_pos ();
         mapsz.y -= mappos.y/2;
         draw_map (mappos, mapsz);
         imgui.igEndGroup ();
@@ -792,7 +794,8 @@ draw_menu ()
     float last_recorded_time = maptrack.track.last_time ();
     int last_recorded_day = int (last_recorded_time);
 
-    ImVec2 dragday_size = imgui.igCalcTextSize ("1345", nullptr, false, -1.f);
+    ImVec2 dragday_size;
+    imgui.igCalcTextSize (&dragday_size, "1345", nullptr, false, -1.f);
 
     imgui.igBeginGroup ();
 
@@ -820,22 +823,21 @@ draw_menu ()
     }
     imgui.igSeparator ();
 
-    if (imgui.igRadioButtonBool ("Since day", menu_since_day))
+    if (imgui.igRadioButton_Bool ("Since day", menu_since_day))
         menu_since_day = true;
     imgui.igSameLine (0, -1);
     imgui.igSetNextItemWidth (dragday_size.x);
-    if (imgui.igDragInt ("##Since day", &maptrack.since_dayx, .25f, 0, last_recorded_day, "%d"))
+    if (imgui.igDragInt ("##Since day", &maptrack.since_dayx, .25f, 0, last_recorded_day, "%d", 0))
         maptrack.since_dayx = glm::clamp (0, maptrack.since_dayx, last_recorded_day);
     imgui.igSameLine (0, -1);
     format_game_time_c<3> (since_dayx_s, "i.e. %md of %lm, %Y", maptrack.since_dayx);
     imgui.igText (since_dayx_s.c_str ());
 
-    if (imgui.igRadioButtonBool ("Last##X days", !menu_since_day))
+    if (imgui.igRadioButton_Bool ("Last##X days", !menu_since_day))
         menu_since_day = false;
     imgui.igSameLine (0, -1);
     imgui.igSetNextItemWidth (dragday_size.x);
-    if (imgui.igDragInt ("##Last X days",
-                &maptrack.last_xdays, .25f, 1, 1 +last_recorded_day, "%d"))
+    if (imgui.igDragInt ("##Last X days", &maptrack.last_xdays, .25f, 1, 1 +last_recorded_day, "%d", 0))
         maptrack.last_xdays = glm::clamp (1, maptrack.last_xdays, last_recorded_day);
     imgui.igSameLine (0, -1);
     auto track_start2 = std::max (0.f, last_recorded_time - maptrack.last_xdays);
@@ -862,7 +864,7 @@ draw_menu ()
         show_track_load = !show_track_load;
     imgui.igSameLine (0, -1);
     if (imgui.igButton ("Clear##track", button_size))
-        imgui.igOpenPopup ("Clear track?");
+        imgui.igOpenPopup_Str ("Clear track?", 0);
     if (imgui.igBeginPopup ("Clear track?", 0))
     {
         if (imgui.igButton ("Confirm##clear track", ImVec2 {}))
@@ -887,7 +889,7 @@ draw_menu ()
         show_icons_load = !show_icons_load;
     imgui.igSameLine (0, -1);
     if (imgui.igButton ("Clear##icons", button_size))
-        imgui.igOpenPopup ("Clear icons?");
+        imgui.igOpenPopup_Str ("Clear icons?", 0);
     if (imgui.igBeginPopup ("Clear icons?", 0))
     {
         if (imgui.igButton ("Confirm##clear icons", ImVec2 {}))
@@ -936,16 +938,17 @@ draw_settings ()
             | ImGuiColorEditFlags_AlphaBar;
 
         imgui.igText ("Default font:");
-        ImVec4 col = imgui.igColorConvertU32ToFloat4 (maptrack.font.color);
+        ImVec4 col;
+        imgui.igColorConvertU32ToFloat4 (&col, maptrack.font.color);
         if (imgui.igColorEdit4 ("Color##Default", (float*) &col, cflags))
-            maptrack.font.color = imgui.igGetColorU32Vec4 (col);
+            maptrack.font.color = imgui.igGetColorU32_Vec4 (col);
         imgui.igSliderFloat ("Scale##Default", &maptrack.font.imfont->Scale, .5f, 2.f, "%.2f", 1);
 
         imgui.igText ("");
         imgui.igCheckbox ("Map info cursor", &maptrack.cursor_info.enabled);
-        col = imgui.igColorConvertU32ToFloat4 (maptrack.cursor_info.color);
+        imgui.igColorConvertU32ToFloat4 (&col, maptrack.cursor_info.color);
         if (imgui.igColorEdit4 ("Color##Cursor", (float*) &col, cflags))
-            maptrack.cursor_info.color = imgui.igGetColorU32Vec4 (col);
+            maptrack.cursor_info.color = imgui.igGetColorU32_Vec4 (col);
         imgui.igSliderFloat ("Scale##Cursor", &maptrack.cursor_info.scale, .5f, 4.f, "%.2f", 1);
         imgui.igCheckbox ("Map deformation", &maptrack.cursor_info.deformation);
         imgui.igSameLine (0, -1);
@@ -953,22 +956,22 @@ draw_settings ()
 
         imgui.igText ("");
         imgui.igCheckbox ("Track", &maptrack.track_enabled);
-        col = imgui.igColorConvertU32ToFloat4 (maptrack.track_color);
+        imgui.igColorConvertU32ToFloat4 (&col, maptrack.track_color);
         if (imgui.igColorEdit4 ("Color##Track", (float*) &col, cflags))
-            maptrack.track_color = imgui.igGetColorU32Vec4 (col);
+            maptrack.track_color = imgui.igGetColorU32_Vec4 (col);
         imgui.igSliderFloat ("Width##Track", &maptrack.track_width, 1.f, 20.f, "%.1f", 1);
 
         imgui.igText ("");
         imgui.igCheckbox ("Player circle", &maptrack.player.enabled);
-        col = imgui.igColorConvertU32ToFloat4 (maptrack.player.color);
+        imgui.igColorConvertU32ToFloat4 (&col, maptrack.player.color);
         if (imgui.igColorEdit4 ("Color##Player", (float*) &col, cflags))
-            maptrack.player.color = imgui.igGetColorU32Vec4 (col);
+            maptrack.player.color = imgui.igGetColorU32_Vec4 (col);
         imgui.igSliderFloat ("Size##Player", &maptrack.player.size, 1.f, 20.f, "%.1f", 1);
 
         imgui.igText ("");
         imgui.igCheckbox ("Fog of War", &maptrack.fow.enabled);
-        imgui.igSliderInt ("Resolution##FoW", &maptrack.fow.resolution, 32, 256, "%d");
-        imgui.igSliderInt ("Discover radius##FoW", &maptrack.fow.discover, 1, 8, "%d");
+        imgui.igSliderInt ("Resolution##FoW", &maptrack.fow.resolution, 32, 256, "%d", 0);
+        imgui.igSliderInt ("Discover radius##FoW", &maptrack.fow.discover, 1, 8, "%d", 0);
         imgui.igSliderFloat ("Default alpha##FoW", &maptrack.fow.default_alpha, 0, 1, "%.2f", 1);
         imgui.igSliderFloat ("Tracked alpha##FoW", &maptrack.fow.tracked_alpha, 0, 1, "%.2f", 1);
 
@@ -1031,7 +1034,7 @@ draw_icons_saveas ()
         {
             auto file = icons_directory + name + ".json";
             if (file_exists (file))
-                imgui.igOpenPopup ("Overwrite file?");
+                imgui.igOpenPopup_Str ("Overwrite file?", 0);
             else if (save_icons (file))
                 show_icons_saveas = false;
         }
@@ -1063,7 +1066,7 @@ draw_track_saveas ()
         {
             auto file = tracks_directory + name + ".bin";
             if (file_exists (file))
-                imgui.igOpenPopup ("Overwrite file?");
+                imgui.igOpenPopup_Str ("Overwrite file?", 0);
             else if (save_track (file))
                 show_track_saveas = false;
         }
@@ -1109,7 +1112,7 @@ draw_icons_load ()
     if (imgui.igBegin ("SSE MapTrack: Load icons", &show_icons_load, 0))
     {
         imgui.igText (icons_directory.c_str ());
-        imgui.igListBoxFnPtr ("##Names",
+        imgui.igListBox_FnBoolPtr ("##Names",
                 &namesel, extract_vector_string, &names, int (names.size ()), items);
         imgui.igSameLine (0, -1);
         imgui.igBeginGroup ();
@@ -1145,7 +1148,7 @@ draw_track_load ()
     if (imgui.igBegin ("SSE MapTrack: Load track", &show_track_load, 0))
     {
         imgui.igText (tracks_directory.c_str ());
-        imgui.igListBoxFnPtr ("##Names",
+        imgui.igListBox_FnBoolPtr ("##Names",
                 &namesel, extract_vector_string, &names, int (names.size ()), items);
         imgui.igSameLine (0, -1);
         imgui.igBeginGroup ();
@@ -1188,11 +1191,12 @@ draw_track_summary ()
         imgui.igText ("Bounding box max: %6.0f %6.0f %6.0f", bb.second.x, bb.second.y, bb.second.z);
 
         const char* name_a = "Altitude histogram";
-        auto avail_sz = imgui.igGetContentRegionAvail ();
-        auto name_asz = imgui.igCalcTextSize (name_a, nullptr, false, -1.f);
+        auto avail_sz = to_ImVec2 (imgui_content_region_avail ());
+        ImVec2 name_asz;
+        imgui.igCalcTextSize (&name_asz, name_a, nullptr, false, -1.f);
         avail_sz.x -= name_asz.x;
         avail_sz.y /= 2; avail_sz.y -= 2*name_asz.y;
-        imgui.igPlotLinesFnPtr (name_a, trackpoint_height, &track_range.first,
+        imgui.igPlotLines_FnFloatPtr (name_a, trackpoint_height, &track_range.first,
                 int (std::distance (track_range.first, track_range.second)), 0, nullptr,
                 bb.first.z, bb.second.z, avail_sz);
 
@@ -1225,7 +1229,7 @@ draw_track_summary ()
         avail_sz.y -= name_asz.y;
         imgui.igText ("");
         imgui.igText ("Speed min: %.2f pts/s, max: %.2f pts/s", min_speed, max_speed);
-        imgui.igPlotLinesFnPtr ("Speed histogram", trackpoint_speed,
+        imgui.igPlotLines_FnFloatPtr ("Speed histogram", trackpoint_speed,
                 speeds.data (), int (speeds.size ()), 0, nullptr,
                 min_speed, max_speed, avail_sz);
 
@@ -1249,8 +1253,8 @@ draw_icons_atlas ()
         static std::string index;
 
         imgui.igText ("Icon index: %s", index.c_str ());
-        auto wsz = to_vec2 (imgui.igGetContentRegionAvail ());
-        auto wpos = to_vec2 (imgui.igGetWindowPos ()) + to_vec2 (imgui.igGetCursorPos ());
+        auto wsz = imgui_content_region_avail ();
+        auto wpos = imgui_window_pos () + imgui_cursor_pos ();
 
         ImGuiIO* io = imgui.igGetIO ();
         glm::vec2 backup_uvtl = uvtl, backup_uvbr = uvbr;
@@ -1289,7 +1293,7 @@ draw_icons_atlas ()
                 uvbr.y = backup_uvbr.y, uvtl.y = backup_uvtl.y;
         }
 
-        imgui.igInvisibleButton ("Icon atlas", to_ImVec2 (wsz));
+        imgui.igInvisibleButton ("Icon atlas", to_ImVec2 (wsz), 0);
         imgui.ImDrawList_AddImage (imgui.igGetWindowDrawList (), maptrack.icon_atlas.ref,
                 to_ImVec2 (wpos), to_ImVec2 (wpos + wsz),
                 to_ImVec2 (uvtl), to_ImVec2 (uvbr), IM_COL32_WHITE);
