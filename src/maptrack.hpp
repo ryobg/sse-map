@@ -32,6 +32,8 @@
 
 #include <sse-imgui/sse-imgui.h>
 #include <utils/winutils.hpp>
+#include <utils/plugin.hpp>
+#include <utils/imgui.hpp>
 
 #include <d3d11.h>
 
@@ -63,16 +65,9 @@ to_ImVec2 (T const& v) { return ImVec2 {v.x, v.y}; }
 
 //--------------------------------------------------------------------------------------------------
 
-// skse.cpp
+// maptrack.cpp
 
-void maptrack_version (int* maj, int* min, int* patch, const char** timestamp);
 bool dispatch_journal (std::string message);
-
-extern std::ofstream& log ();
-extern std::string logfile_path;
-
-extern imgui_api imgui;
-extern sseimgui_api sseimgui;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -106,15 +101,13 @@ imgui_content_region_avail ()
 
 bool save_settings ();
 bool load_settings ();
-bool save_track (std::string const& file); ///< Modifies maptrack#track
-bool load_track (std::string const& file); ///< Modifies maptrack#track
-bool save_icons (std::string const& file); ///< Modifies maptrack#icons
-bool load_icons (std::string const& file); ///< Modifies maptrack#icons
+bool save_track (std::filesystem::path const& file); ///< Modifies maptrack#track
+bool load_track (std::filesystem::path const& file); ///< Modifies maptrack#track
+bool save_icons (std::filesystem::path const& file); ///< Modifies maptrack#icons
+bool load_icons (std::filesystem::path const& file); ///< Modifies maptrack#icons
 
-extern std::string tracks_directory;
-extern std::string icons_directory;
-extern std::string default_track_file;
-extern std::string default_icons_file;
+extern std::filesystem::path
+    tracks_directory, icons_directory, default_track_file, default_icons_file;
 
 //--------------------------------------------------------------------------------------------------
 
@@ -191,17 +184,6 @@ struct icon_t
     std::uint32_t index;///< Z order index within #icon_atlas_t
     std::string text;   ///< Size constrained text for small tip info and for Journal interaction
     std::string atlas;  ///< The UID of the atlas to match to
-};
-
-struct font_t
-{
-    std::string name;
-    float scale;
-    float size;
-    std::uint32_t color; ///< Only this is tuned by the UI, rest are default init only
-    std::string file;
-    const char* default_data;
-    ImFont* imfont; ///< Actual font with its settings (apart from #color)
 };
 
 //--------------------------------------------------------------------------------------------------

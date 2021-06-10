@@ -149,6 +149,9 @@ std::string format_utf8message (DWORD error_code);
 /// Report as text the given windows message (e.g. WM_*) identifier
 const char* window_message_text (unsigned msg);
 
+/// Create and returns right away a process, optionally its stdout/stderr redirected to a file
+bool create_process (std::string const& command_line, std::string const& output_file = "");
+
 //--------------------------------------------------------------------------------------------------
 
 /// Including file permissions and etc. errors
@@ -173,7 +176,6 @@ enumerate_files (std::string const& wildcard, Container& out)
     std::wstring w;
     if (!utf8_to_utf16 (wildcard.c_str (), w))
         return false;
-    out.clear ();
     WIN32_FIND_DATA fd;
     auto h = ::FindFirstFile (w.c_str (), &fd);
     if (h == INVALID_HANDLE_VALUE)
