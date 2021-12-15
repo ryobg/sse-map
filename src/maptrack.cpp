@@ -36,7 +36,7 @@ maptrack_t maptrack = {};
 std::string const&
 plugin_name ()
 {
-    static std::string v = "sse-maptrack";
+    static std::string v = PLUGIN_NAME;
     return v;
 }
 
